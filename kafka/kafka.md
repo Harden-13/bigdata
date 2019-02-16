@@ -77,8 +77,8 @@ zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设�
 ```
 ./kafka-topics.sh --create --zookeeper python0:2181,python1:2181,python2:2181 --replication-factor 2 --partitions 1 --topic test
 --replication-factor 2  #复制两份
---partitions 1 			#创建1个分区
---topic 				#主题为test
+--partitions 1          #创建1个分区
+--topic                 #主题为test
 ```
 
 ````
