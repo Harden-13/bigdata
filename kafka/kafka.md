@@ -12,7 +12,7 @@ kafka分区是提高kafka性能的关键所在,增加分区，提高性能
 
 ##### zookeeper setup
 
-<!--Kafka集群是把状态保存在Zookeeper中的，首先要搭建Zookeeper集群。-->
+<span style='color:red'>1.Kafka集群是把状态保存在Zookeeper中的，首先要搭建Zookeeper集群。</span>
 
 ```
 #yum install java-1.8*
@@ -22,7 +22,7 @@ kafka分区是提高kafka性能的关键所在,增加分区，提高性能
 #cd ../bin && ./zkServer.sh start
 ```
 
-<!--配置文件解写-->
+<span style='color:red'>2.配置文件解写</span>
 
 ```
 #tickTime：
@@ -49,7 +49,7 @@ server.1 这个1是服务器的标识也可以是其他的数字， 表示这个
 # ./kafka-server-start.sh -daemon ../config/server.properties
 ```
 
-<!--配置文件解析-->
+<span style='color:red'>1.配置文件解析</span>
 
 ```
 broker.id=0  #当前机器在集群中的唯一标识，和zookeeper的myid性质一样
@@ -72,7 +72,7 @@ log.cleaner.enable=false #是否启用log压缩，一般不用启用，启用的
 zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设置zookeeper的连接端口
 ```
 
-<!--kafa基本命令使用,创建，生产，消费，查看，状态-->
+<span style='color:red'>2.kafa基本命令使用,创建，生产，消费，查看，状态</span>
 
 ```
 ./kafka-topics.sh --create --zookeeper python0:2181,python1:2181,python2:2181 --replication-factor 2 --partitions 1 --topic test
