@@ -95,5 +95,13 @@ zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设�
 
 ```
 /kafka-topics.sh --describe --zookeeper python0:2181,python1:2181,python2:2181 --topic test
+---
+第一行给出了所有分区信息的摘要，接下来的每一行则给出具体的每一个分区信息
+---
+“leader”节点
+“leader”节点负责响应给定节点的所有读写操作。每个节点都可能成为所有分区中一个随机选择分区的leader。
+“replicas”是复制当前分区的节点列表，无论这些节点是不是leader、是不是可用。
+“isr”是目前处于同步状态的replicas集合。它是replicas列表的子集，其中仅包含当前可用并且与leader同步的节点。
+注意上述例子中，编号为1的节点是这个只有一个分区的主题的leader。
 ```
 
