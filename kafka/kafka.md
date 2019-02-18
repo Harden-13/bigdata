@@ -82,7 +82,7 @@ zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #è®¾ç½
 ```
 
 ````
-./kafka-console-producer.sh --broker-list 192.168.10.10:9092 --topic test
+./kafka-console-producer.sh --broker-list localhost:9092 --topic test
 ````
 
 ```
