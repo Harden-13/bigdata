@@ -46,7 +46,7 @@ server.1 这个1是服务器的标识也可以是其他的数字， 表示这个
 
 ```
 #cd /opt/software && wget https://archive.apache.org/dist/kafka/0.9.0.1/kafka_2.11-0.9.0.1.tgz && tar -xvf kafka_2.11-0.9.0.1.tgz -C /opt/ && ln -s kafka_2.11-0.9.0.1.tgz kafka && cd /opt/kafka/bin
-# ./kafka-server-start.sh -daemon ../config/server.properties
+# /opt/kafka/bin/kafka-server-start.sh -daemon /opt/kafka/config/server.properties
 ```
 
 <span style='color:red'>1.配置文件解析</span>
