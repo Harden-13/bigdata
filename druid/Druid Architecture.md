@@ -12,7 +12,7 @@
 数据文件库存储(deepstorage) : 存放生成segment文件，并提供历史节点下载，对于单点集群可以是本地磁盘，分布式一般是hdfs
 ```
 
-![](C:\Users\lenovo\Desktop\druid_str.png)
+![](https://github.com/Harden-13/bigdata/blob/master/druid/druid.png)
 
 ```
 为了加速数据库的访问，大多传统的关系型数据库都会使用特殊的数据结构来帮助查找数据，这种数据结构叫做索引(index)，传统关系型数据库，考虑到经常需要范围查找某一项数据，因此其索引一般不使用hash算法，而使用树(tree)结构，B+树及其衍生树是被用的比较多的索引树
