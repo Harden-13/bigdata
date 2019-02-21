@@ -3,7 +3,7 @@
 ```
 1、消费者：（Consumer）：从消息队列中请求消息的客户端应用程序
 2、生产者：（Producer）  ：向broker发布消息的应用程序
-3、AMQP服务端（broker）：用来接收生产者发送的消息并将这些消息路由给服务器中的队列，便于fafka将		生产者发送的消息，动态的添加到磁盘并给每一条消息一个偏移量，所以对于kafka	一个broker就是一个应用程序的实例
+3、AMQP服务端（broker）：用来接收生产者发送的消息并将这些消息路由给服务器中的队列，便于kafka将生产者发送的消息，动态的添加到磁盘并给每一条消息一个偏移量，所以对于kafka	一个broker就是一个应用程序的实例
 4.主题（topic）：在工程中一个业务就是一个主题
 5.分区（partition）：分区是kafka消息队列组织的最小单位,一个Topic中的消息数据按照多个分区组织;
 kafka分区是提高kafka性能的关键所在,增加分区，提高性能
@@ -46,7 +46,7 @@ server.1 这个1是服务器的标识也可以是其他的数字， 表示这个
 
 ```
 #cd /opt/software && wget https://archive.apache.org/dist/kafka/0.9.0.1/kafka_2.11-0.9.0.1.tgz && tar -xvf kafka_2.11-0.9.0.1.tgz -C /opt/ && ln -s kafka_2.11-0.9.0.1.tgz kafka && cd /opt/kafka/bin
-# ./kafka-server-start.sh -daemon ../config/server.properties
+# /opt/kafka/bin/kafka-server-start.sh -daemon /opt/kafka/config/server.properties
 ```
 
 <span style='color:red'>1.配置文件解析</span>
@@ -95,5 +95,13 @@ zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设�
 
 ```
 /kafka-topics.sh --describe --zookeeper python0:2181,python1:2181,python2:2181 --topic test
+---
+第一行给出了所有分区信息的摘要，接下来的每一行则给出具体的每一个分区信息
+---
+“leader”节点
+“leader”节点负责响应给定节点的所有读写操作。每个节点都可能成为所有分区中一个随机选择分区的leader。
+“replicas”是复制当前分区的节点列表，无论这些节点是不是leader、是不是可用。
+“isr”是目前处于同步状态的replicas集合。它是replicas列表的子集，其中仅包含当前可用并且与leader同步的节点。
+注意上述例子中，编号为1的节点是这个只有一个分区的主题的leader。
 ```
 
