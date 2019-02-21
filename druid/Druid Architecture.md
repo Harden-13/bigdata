@@ -35,7 +35,7 @@ B+树的数据更新从叶子节点开始，更新过程已较小的代价实现
 使用日志文件恢复故障，所有新插入与更新操作都首先会被记录到commit log,该操作叫做wal(write ahead log),然后在写道memtable,当到达一定条数时数据从memtable冲写道sstab，memtable,sstable可同时提供查询。memtable出现故障可从sstable,commit log中将数据恢复
 ```
 
-![](C:\Users\lenovo\Desktop\segment.png)
+![](https://github.com/Harden-13/bigdata/blob/master/druid/segment.png)
 
 ##### indexing service
 
@@ -52,7 +52,7 @@ B+树的数据更新从叶子节点开始，更新过程已较小的代价实现
 	1.2远程模式 ： overload & middle manager运行在不同节点上，它仅负责集群任务协调分配，并提供restful的访问方法，客户端通过http post请求向overload提交任务
 ```
 
-![](C:\Users\lenovo\Desktop\indexing service1.png)
+![](https://github.com/Harden-13/bigdata/blob/master/druid/indexing.png)
 
 
 
