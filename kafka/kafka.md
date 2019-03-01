@@ -72,7 +72,7 @@ log.cleaner.enable=false #是否启用log压缩，一般不用启用，启用的
 zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设置zookeeper的连接端口
 ```
 
-<span style='color:red'>2.kafa基本命令使用,创建，生产，消费，查看，状态</span>
+<span style='color:red'>2.kafa基本命令使用,1创建，2生产，3消费，4查看，5状态</span>
 
 ```
 ./kafka-topics.sh --create --zookeeper python0:2181,python1:2181,python2:2181 --replication-factor 2 --partitions 1 --topic test
