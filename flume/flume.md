@@ -8,6 +8,16 @@ channel保证了一旦数据源过快，sink来不及消费保存数据造成数
 
 ##### example ：本地日志文件打到kafka
 
+````
+Spool监测配置的目录下新增的文件，并将文件中的数据读取出来。需要注意两点：
+1) 拷贝到spool目录下的文件不可以再打开编辑。
+2) spool目录下不可包含相应的子目录
+TAILDIR
+1) 需要能够监控文件，并且追加文件，
+2) 同时文件个数也是不断变化的。
+
+````
+
 ```
 ##下载1.7
 wget http://archive.apache.org/dist/flume/1.7.0/apache-flume-1.7.0-bin.tar.gz
@@ -46,5 +56,12 @@ agent.sinks.loggerSink.kafka.producer.linger.ms = 1
 agent.sinks.loggerSink.kafka.producer.compression.type = snappy
 ```
 
-
+```
+对于不断追加的文件以及变化的文件个数
+##set source
+agent.sources.seqGenSrc.type = TAILDIR
+agent.sources.seqGenSrc.filegroups = f1
+agent.sources.seqGenSrc.filegroups.f1 = /data/logs/.*log.*
+agent.sources.seqGenSrc.fileHeader = flase
+```
 
