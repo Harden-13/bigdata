@@ -75,6 +75,7 @@ zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设�
 <span style='color:red'>2.kafa基本命令使用,1创建，2生产，3消费，4查看，5状态</span>
 
 ```
+#集群任意节点创建topic都ok
 ./kafka-topics.sh --create --zookeeper python0:2181,python1:2181,python2:2181 --replication-factor 2 --partitions 1 --topic test
 --replication-factor 2  #复制两份
 --partitions 1          #创建1个分区
