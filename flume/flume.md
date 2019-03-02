@@ -65,3 +65,9 @@ agent.sources.seqGenSrc.filegroups.f1 = /data/logs/.*log.*
 agent.sources.seqGenSrc.fileHeader = flase
 ```
 
+```
+从不断追加的日志文件录入flume
+agent.sources.seqGenSrc.type = exec
+agent.sources.seqGenSrc.command = tail -F /data/logs/infoserver/access.log
+```
+
