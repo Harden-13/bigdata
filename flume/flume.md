@@ -12,10 +12,9 @@ channel保证了一旦数据源过快，sink来不及消费保存数据造成数
 Spool监测配置的目录下新增的文件，并将文件中的数据读取出来。需要注意两点：
 1) 拷贝到spool目录下的文件不可以再打开编辑。
 2) spool目录下不可包含相应的子目录
-TAILDIR
-1) 需要能够监控文件，并且追加文件，
-2) 同时文件个数也是不断变化的。
-
+exec
+1) 能够监控文件，并且追加文件，
+2) 目录下的多个文件
 ````
 
 ```
@@ -57,17 +56,19 @@ agent.sinks.loggerSink.kafka.producer.compression.type = snappy
 ```
 
 ```
-对于不断追加的文件以及变化的文件个数
-##set source
-agent.sources.seqGenSrc.type = TAILDIR
-agent.sources.seqGenSrc.filegroups = f1
-agent.sources.seqGenSrc.filegroups.f1 = /data/logs/.*log.*
-agent.sources.seqGenSrc.fileHeader = flase
-```
+###exec example 1
+agent.sources.seqGenSrc.type = exec
+agent.sources.seqGenSrc.shell = /bin/bash -c
+agent.sources.seqGenSrc.command = for i in /path/*.txt; do cat $i; done
+#agent.sources.seqGenSrc.command = tail -F /data/logs/infoserver/`date +%Y%m%d`.log
 
-```
+###eexec example 2
 从不断追加的日志文件录入flume
 agent.sources.seqGenSrc.type = exec
 agent.sources.seqGenSrc.command = tail -F /data/logs/infoserver/access.log
+```
+
+```
+
 ```
 
