@@ -29,7 +29,7 @@ v1消息格式：
 总之单条Kafka消息长度的计算是很简单的
 ```
 
-![](C:\Users\lenovo\Desktop\bigdata\bigdata\images\v1_message_type.png)
+![](https://github.com/Harden-13/bigdata/blob/master/images/v1_message_type.png)
 
 ```
 我们来看下如何计算消息集合大小，还是拿之前的两条Kafka消息为例。第一条消息被封装进一个消息集合，那么该消息集合总的长度 = 12 + 30 = 42字节，而包含第二条未指定key消息的消息集合总长度 = 12 + 27 = 39字节。
