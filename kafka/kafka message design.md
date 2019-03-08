@@ -12,7 +12,7 @@ kafka消息层次分为2曾：
 下面我们来说说消息集合日志项的计算,消息集合中得每一项得格式如下图所示：
 ```
 
-![](C:\Users\lenovo\Desktop\bigdata\bigdata\images\v1_log_head.png)
+![](https://github.com/Harden-13/bigdata/blob/master/images/v1_log_head.png)
 
 ```
 每个消息集合中的日志项由日志项头部+一条“浅层”消息构成。
