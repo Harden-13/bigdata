@@ -48,5 +48,5 @@ v2版本的消息格式比起v1有很大的变化。除了可变长度这一点�
 6.v2版本不在使用属性字节，原先保存在属性字段中的诸如压缩类型、时间戳类型等信息都统一保存在外层的batch中
 ```
 
-![](C:\Users\lenovo\Desktop\bigdata\bigdata\images\v2_message_type.png)
+![](https://github.com/Harden-13/bigdata/blob/master/images/v2_log_type.png)
 
