@@ -56,13 +56,13 @@ agent.sinks.loggerSink.kafka.producer.compression.type = snappy  #Snappy是用C+
 ```
 
 ```
-###exec example 1
+###exec example 1  ;this is event 
 agent.sources.seqGenSrc.type = exec
 agent.sources.seqGenSrc.shell = /bin/bash -c
 agent.sources.seqGenSrc.command = for i in /path/*.txt; do cat $i; done
 #agent.sources.seqGenSrc.command = tail -F /data/logs/infoserver/`date +%Y%m%d`.log
 
-###eexec example 2
+###eexec example 2 ;this is streaming
 从不断追加的日志文件录入flume
 agent.sources.seqGenSrc.type = exec
 agent.sources.seqGenSrc.command = tail -F /data/logs/infoserver/access.log
