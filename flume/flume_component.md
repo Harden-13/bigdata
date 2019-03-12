@@ -19,6 +19,7 @@ SpoolSource：检测配置的目录下新增得文件，并将文件中得数据
 ```
 MemoryChannel: 可以实现高速的吞吐，但是无法保证数据的完整性
 FileChannel保证数据的完整性与一致性。在具体配置不现的FileChannel时，建议FileChannel设置的目录和程序日志文件保存的目录设成不同的磁盘，以便提高效率
+备注：channel的事务保证了从source到channel的可靠性；持久化保证了 从agent到agent的可靠性
 ```
 
 ##### 3.Sink
