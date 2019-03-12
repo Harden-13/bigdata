@@ -52,7 +52,7 @@ agent.sinks.loggerSink.kafka.bootstrap.servers = 192.168.10.10:9092,192.168.10.1
 agent.sinks.loggerSink.kafka.flumeBatchSize = 20
 agent.sinks.loggerSink.kafka.producer.acks = 1
 agent.sinks.loggerSink.kafka.producer.linger.ms = 1
-agent.sinks.loggerSink.kafka.producer.compression.type = snappy
+agent.sinks.loggerSink.kafka.producer.compression.type = snappy  #Snappy是用C++开发的压缩和解压缩开发包，旨在提供高速压缩速度和合理的压缩率
 ```
 
 ```
