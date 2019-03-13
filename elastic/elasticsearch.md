@@ -49,11 +49,35 @@ http.port: 9200
 discovery.zen.ping.unicast.hosts: ["python0", "python1","python2"] #集群的主机地址，配置之后集群的主机之间可以自动发现
 discovery.zen.minimum_master_nodes: 2 #为了防止集群发生“脑裂”，即一个集群分裂成多个，通常需要配置集群最少主节点数目，通常为 (可成为主节点的主机数目 / 2) + 1
 gateway.recover_after_nodes: 2 #配置当最少几个节点回复之后，集群就正常工作
+bootstrap.memory_lock: true    #内存物理地址锁定，提高效率
+```
+
+##### system configure to solve memory: reference from stackoverflow:ugosan
+
+```
+1) /etc/sysconfig/elasticsearch
+On sysconfig: /etc/sysconfig/elasticsearch you should have:
+	ES_JAVA_OPTS="-Xms4g -Xmx4g" 
+	MAX_LOCKED_MEMORY=unlimited
+(replace 4g with HALF your available RAM as recommended here)
+2) /etc/security/limits.conf
+On security limits config: /etc/security/limits.conf you should have
+	* soft memlock unlimited
+	* hard memlock unlimited
+3) /usr/lib/systemd/system/elasticsearch.service
+On the service script: /usr/lib/systemd/system/elasticsearch.service you should uncomment:
+	LimitMEMLOCK=infinity
+you should do systemctl daemon-reload after changing the service script
+4) /etc/elasticsearch/elasticsearch.yml
+On elasticsearch config finally: /etc/elasticsearch/elasticsearch.yml you should add:
+	bootstrap.memory_lock: true
+Thats it, restart your node and the RAM will be locked, you should notice a major performance improvement.
 ```
 
 ##### start elasticsearch
 
 ```
+sudo systemctl daemon-reload
 sudo systemctl enable elasticsearch.service
 sudo systemctl start elasticsearch.service
 ```
@@ -61,6 +85,13 @@ sudo systemctl start elasticsearch.service
 ##### cluster status
 
 ```
-curl -XGET 'http://localhost:9200/_cluster/state?pretty'
+curl -XGET 'http://192.168.10.10:9200/_cluster/state?pretty'
+curl -XGET 'http://192.168.10.10:9200/_nodes?filter_path=**.mlockall'
+```
+
+##### elasticsearch head
+
+```
+#download by chrome app
 ```
 
