@@ -23,3 +23,13 @@ hadoop dfs	: 只能操作hdfs分布式文件系统，已经弃用
 hdfs dfs 	: 只能操作hdfs分布式文件系统
 ```
 
+##### configuration file  priority
+
+```
+配置文件应用的顺序：
+在JobConf中指定的
+客户端机器上的__-site.xml配置
+slave节点上的__-site.xml配置
+__-default.xml中的配置
+```
+
