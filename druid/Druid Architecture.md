@@ -12,6 +12,27 @@
 数据文件库存储(deepstorage) : 存放生成segment文件，并提供历史节点下载，对于单点集群可以是本地磁盘，分布式一般是hdfs
 ```
 
+```
+Broker：接收来自外部客户端的查询，并将这些查询转发到Historical节点。当Broker节点收到结果，它们将合并这些结果并将它们返回给调用者。由于了解拓扑，Broker节点使用Zookeeper来确定哪些Historical节点的存在。
+
+IndexServices：Indexing Service是负责“生产”Segment的高可用、分布式、Master/Slave架构服务。主要由三类组件构成：负责运行索引任务(indexing task)的Peon，负责控制Peon的MiddleManager，负责任务分发给MiddleManager的Overlord
+
+Overlord：Overlord负责接受任务、协调任务的分配、创建任务锁以及收集、返回任务运行状态给调用者。当集群中有多个Overlord时，则通过选举算法产生Leader，其他Follower作为备份。
+Overlord监控UI ：http://overlord_ip:8081
+
+Middle Manager和Peon：MiddleManager负责接收Overlord分配的索引任务，同时创建新的进程用于启动Peon来执行索引任务，每一个MiddleManager可以运行多个Peon实例。
+
+Peon是Indexing Service的最小工作单元，也是索引任务的具体执行者，所有当前正在运行的Peon任务都可以通过Overlord提供的web可视化界面进行访问。
+
+middleManager Overlord监控UI：http://middleManager_ip:8090/console.html
+
+Coordinator：监控Historical节点组，以确保数据可用、可复制，并且在一般的“最佳”配置。它们通过从MySQL读取数据段的元数据信息，来决定哪些数据段应该在集群中被加载，使用Zookeeper来确定哪个Historical节点存在，并且创建Zookeeper条目告诉Historical节点加载和删除新数据段。
+
+Historical：是对“historical”数据（非实时）进行处理存储和查询的地方。Historical节点响应从Broker节点发来的查询，并将结果返回给broker节点。它们在Zookeeper的管理下提供服务，并使用Zookeeper监视信号加载或删除新数据段。
+
+RealTime：负责监听输入数据流并让其在内部的Druid系统立即获取，Realtime节点同样只响应broker节点的查询请求，返回查询结果到broker节点。旧数据会被从Realtime节点转存Historical节点。
+```
+
 ![](https://github.com/Harden-13/bigdata/blob/master/druid/druid.png)
 
 ```
