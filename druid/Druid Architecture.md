@@ -12,6 +12,8 @@
 数据文件库存储(deepstorage) : 存放生成segment文件，并提供历史节点下载，对于单点集群可以是本地磁盘，分布式一般是hdfs
 ```
 
+##### druid component
+
 ```
 Broker：接收来自外部客户端的查询，并将这些查询转发到Historical节点。当Broker节点收到结果，它们将合并这些结果并将它们返回给调用者。由于了解拓扑，Broker节点使用Zookeeper来确定哪些Historical节点的存在。
 
