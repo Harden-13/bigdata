@@ -106,3 +106,23 @@ dfs.namenode.checkpoint.dir：file:///mnt/disk1/hdfs/namesecondary
 Determines where on the local filesystem the DFS secondary name node should store the temporary images to merge. If this is a comma-delimited list of directories then the image is replicated in all of the directories for redundancy.
 ```
 
+
+
+##### secondary node
+
+```
+namenode的元数据存储在内存中，避免断电遗失，在磁盘持久化元数据文件fsImage，避免效率问题不能同时更新内存中的元数据，和fsImage,因此引入edit.log文件(只进行追加操作，效率奇高)，内存中元数据更改后，追加到edit.log，为避免edit.log文件过大需要定时合并，为避免namenode效率地下，所以引入secondary node
+```
+
+##### check point process  (secondary node = sn)
+
+```
+sn请求主Namenode停止使用edits文件，暂时将新的写操作记录到一个新文件中，如edits.new。 
+sn节点从主Namenode节点获取fsimage和edits文件（采用HTTP GET）
+sn将fsimage文件载入到内存，逐一执行edits文件中的操作，创建新的fsimage文件 
+sn将新的fsimage文件发送回主Namenode（使用HTTP POST）
+主Namenode节点将从secondary namenode节点接收的fsimage文件替换旧的fsimage文件，用步骤1产生的edits.new文件替换旧的edits文件（即改名）。同时更新fstime文件来记录检查点执行的时间
+
+注弃用
+```
+
