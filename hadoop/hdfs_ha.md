@@ -11,7 +11,16 @@ datanode : a file is split into one or more blocks and these blocks are stored i
 ```
 在 Hadoop2.0 中，HDFS NameNode 和 YARN ResourceManger(JobTracker 在 2.0 中已经被整合到 YARN ResourceManger 之中) 的单点问题都得到了解决
 Active NameNode 和 Standby NameNode：两台 NameNode 形成互备，一台处于 Active 状态，为主 NameNode，另外一台处于 Standby 状态，为备 NameNode，只有主 NameNode 才能对外提供读写服务。
+并且通过zkfc,进行监控主从状态，journalnode做元数据共享
 ```
+
+##### resoucemanager ha 
+
+```
+通过zk,漂移节点，并注册到yarn-leader-election目录
+```
+
+
 
 ##### ha  switch
 
