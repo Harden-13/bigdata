@@ -106,11 +106,18 @@ zookeeper.connect=192.168.10.10:2181,192.168.10.11:2181,192.168.10.12:218 #设�
 注意上述例子中，编号为1的节点是这个只有一个分区的主题的leader。
 ```
 
+##### 删除
+
 ```
-#删除
 #Topic deletion option is disabled by default. To enable it set the server config
 delete.topic.enable=true
 ./kafka-topics.sh --zookeeper python0:2181,python1:2181,python2:2181 --delete --topic test
 
+```
+
+##### kafka manager
+
+```
+http://ip:9090
 ```
 
