@@ -114,5 +114,13 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/1'
 python manage.py celery beat --loglevel=info
 python manage.py  celery worker --loglevel=info
 python manage.py  runserver 0.0.0.0:8000
+python manage.py flower		# 读取django里面的设置
+```
+
+##### flower
+
+```
+pip install flower==0.9
+celery flower --address=0.0.0.0 --port=5555 --broker=redis -basic_auth=admin:admin
 ```
 
