@@ -1,3 +1,16 @@
+##### hadoop3.x常见端口
+
+```
+hdfs namenode				9820
+hdfs namenode http ui		9870
+sencondary namenode			9869
+sencondary namenode http ui	9868
+hdfs datanode				9866
+hdfs datanode ipc			9867
+hdfs datanode http ui		9864
+yarn rescouceManager		8088
+```
+
 ##### hadoop port
 
 ```
@@ -8,6 +21,13 @@ notha hdfs	:	9000
 yarn webui	:	8088
 journalnode :	8485
 zkfs		:	8019
+hdfs namenode				8020/9000
+hdfs namenode http ui		50070
+sencondary namenode			50091
+sencondary namenode http ui	50090
+hdfs datanode				50010
+hdfs datanode ipc			50020
+hdfs datanode http ui		50075
 ```
 
 ##### zookeeper
