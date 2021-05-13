@@ -471,3 +471,12 @@ ZKFC使用一个健康检查命令定期地ping与之在相同主机的NameNode�
 
 ```
 
+### 命令使用
+
+#### 1.ha中访问hdfs
+
+```
+hadoop fs -put /opt/hive.txt  hdfs://hadoop2:8020/hive/
+hadoop fs -put /opt/hive.txt  hdfs://mycluster:8020/hive/
+```
+

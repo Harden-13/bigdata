@@ -2,6 +2,8 @@
 
 #### 1.hdfs组成架构
 
+##### 1.namenode 特性
+
 * NameNode(nn),就是master，它是一个管理者
 
 ```
@@ -161,6 +163,15 @@ hadoop fs -setrep 10 /aa/bb/kongming.txt
 源码解析：org.apache.hadoop.hdfs.DFSOutputStream 
 参见图片hadoopwrite.png
 ```
+
+* hdfs存储300M文件
+
+```
+hadoop fs -du -s -h  hdfs://mycluster:8020/test
+查看（或者web）文件size都是真实大小,不会让人感知到他是分块存储的
+```
+
+
 
 * hdfs读数据流程
 
@@ -392,5 +403,52 @@ touch blacklist
 
 ```
 
+### 3.namenode小文件调优
 
+* 小文件对namenode影响
+
+```
+HDFS上每个文件都要在NameNode上创建对应的元数据，这个元数据的大小约为150byte，这样当小文件比较多的时候，就会产生很多的元数据文件，一方面会大量占用NameNode的内存空间，另一方面就是元数据文件过多，使得寻址索引速度变慢。
+小文件过多，在进行MR计算时，会生成过多切片，需要启动过多的MapTask。每个MapTask处理的数据量小，导致MapTask的处理时间比启动时间还小，白白消耗资源。
+```
+
+* namenode小文件调优
+
+```
+1)	小文件优化的方向：
+（1）在数据采集的时候，就将小文件或小批数据合成大文件再上传HDFS。
+（2）在业务处理之前，在HDFS上使用MapReduce程序对小文件进行合并。
+（3）在MapReduce处理时，可采用CombineTextInputFormat提高效率。
+（4）开启uber模式，实现jvm重用
+2)	Hadoop Archive
+是一个高效的将小文件放入HDFS块中的文件存档工具，能够将多个小文件打包成一个HAR文件，从而达到减少NameNode的内存使用
+3)	SequenceFile
+SequenceFile是由一系列的二进制k/v组成，如果为key为文件名，value为文件内容，可将大批小文件合并成一个大文件
+4)	CombineTextInputFormat
+CombineTextInputFormat用于将多个小文件在切片过程中生成一个单独的切片或者少量的切片
+5)	开启uber模式，实现jvm重用。默认情况下，每个Task任务都需要启动一个jvm来运行，如果Task任务计算的数据量很小，我们可以让同一个Job的多个Task运行在一个Jvm中，不必为每个Task都开启一个Jvm. 
+开启uber模式，在mapred-site.xml中添加如下配置
+<!--  开启uber模式 -->
+<property>
+  <name>mapreduce.job.ubertask.enable</name>
+  <value>true</value>
+</property>
+
+<!-- uber模式中最大的mapTask数量，可向下修改  --> 
+<property>
+  <name>mapreduce.job.ubertask.maxmaps</name>
+  <value>9</value>
+</property>
+<!-- uber模式中最大的reduce数量，可向下修改 -->
+<property>
+  <name>mapreduce.job.ubertask.maxreduces</name>
+  <value>1</value>
+</property>
+<!-- uber模式中最大的输入数据量，默认使用dfs.blocksize 的值，可向下修改 -->
+<property>
+  <name>mapreduce.job.ubertask.maxbytes</name>
+  <value></value>
+</property>
+
+```
 

@@ -1,6 +1,8 @@
-#### Map Reduce
+## <span style='color:yellow'>Map Reduce</span>
 
-##### 1.MR缺点
+### <span style='color:red'>1.map reduce总概</span>
+
+#### 1.MR缺点
 
 ```
 1）不擅长实时计算
@@ -12,7 +14,7 @@ MapReduce无法像MySQL一样，在毫秒或者秒级内返回结果
 
 ```
 
-##### 2.MR核心思想
+#### 2.MR核心思想
 
 ```
 （1）分布式的运算程序往往需要分成至少2个阶段。
@@ -21,7 +23,7 @@ MapReduce无法像MySQL一样，在毫秒或者秒级内返回结果
 （4）MapReduce编程模型只能包含一个Map阶段和一个Reduce阶段，如果用户的业务逻辑非常复杂，那就只能多个MapReduce程序，串行运行。
 ```
 
-##### 3.MR进程
+#### 3.MR进程
 
 ```
 （1）MrAppMaster：负责整个程序的过程调度及状态协调。
@@ -29,7 +31,7 @@ MapReduce无法像MySQL一样，在毫秒或者秒级内返回结果
 （3）ReduceTask：负责Reduce阶段的整个数据处理流程
 ```
 
-##### 4.常见的数据序列化类型
+#### 4.常见的数据序列化类型
 
 ```
 Java类型	   Hadoop Writable类型
@@ -46,7 +48,7 @@ Null		NullWritable
 
 ```
 
-##### 5.编程规范
+#### 5.编程规范
 
 * Mapper阶段
 
@@ -73,11 +75,11 @@ Null		NullWritable
 相当于Yar集群客户端，用于提交我们整个程序到yarn集群，提交的是封装了mapreduce程序相关参数的job对象
 ```
 
-##### 6.序列化Writable接口
+### 2.序列化Writable接口
 
 ```
 Hadoop序列化的作用
-序列化在分布式环境的两大作用：进程间通信，永久存储。
+序列化在分布式环境的两大作用：进程间通信，永久存储(对象的传递)。
 Hadoop节点间通信。
 ```
 
@@ -149,9 +151,9 @@ public class FlowBean implements Writable {
     }
 ```
 
-##### 7框架原理
+### 3.框架原理
 
-###### 1.切片与切块
+#### 1.切片与切块
 
 ```
 数据块：Block是HDFS物理上把数据分成一块一块。数据块是HDFS存储数据单位。
@@ -163,13 +165,13 @@ public class FlowBean implements Writable {
 ④ 切片大小和切块大小默认是一致的，这样设计目的为了避免将来切片读取数据的时候有跨机器的情况
 ```
 
-###### 2.mapreduce数据流
+#### 2.mapreduce数据流
 
 ```
 Input->InputFormat->Mapper->Mapper sort->Shuffle->Copy Sort Reduce->Reducer->OutputFormat->Output
 ```
 
-###### 3.InputFormat抽象类，二个抽象方法
+#### 3.InputFormat抽象类，二个抽象方法
 
 ```
 public abstract class InputFormat<K, V>
@@ -179,7 +181,7 @@ public abstract class InputFormat<K, V>
   public abstract RecordReader<K,V> createRecordReader
 ```
 
-###### 4.FileInputFormat继承InputFormat
+##### 1.FileInputFormat继承InputFormat
 
 ```
 public abstract class FileInputFormat<K, V> extends InputFormat<K, V>
@@ -197,7 +199,7 @@ public List<InputSplit> getSplits(JobContext job)
 				  }
 ```
 
-* 切片原理
+###### 1.切片原理
 
 ```
 1.程序先找到数据存储的目录
@@ -215,7 +217,7 @@ public List<InputSplit> getSplits(JobContext job)
 	b:60M  0-60M
 ```
 
-* TextInputFormat
+###### 2.TextInputFormat
 
 ```
 public class TextInputFormat extends FileInputFormat<LongWritable, Text>
@@ -226,7 +228,7 @@ public class TextInputFormat extends FileInputFormat<LongWritable, Text>
     return new LineRecordReader(recordDelimiterBytes);
 ```
 
-###### 5.CombineTextInputFormat切片机制
+##### 2.CombineTextInputFormat切片机制
 
 * 应用场景
   * CombineTextInputFormat用于小文件过多的场景，它可以将多个小文件从逻辑上规划到一个切片中，这样，多个小文件就可以交给一个MapTask处理。
@@ -264,7 +266,7 @@ CombineTextInputFormat.setMaxInputSplitSize(job, 4194304);// 4m
 
 ```
 
-##### 5.Shuffle工作流程
+#### 4.Shuffle工作流程
 
 ```
 按照行读取，分片->MT->kv对-缓冲区——>shuffle，，，——>落地文件
@@ -284,7 +286,7 @@ CombineTextInputFormat.setMaxInputSplitSize(job, 4194304);// 4m
 
 ```
 
-##### 6.分区源码
+#### 5.分区源码
 
 * hadoop-mapreduce-client-core-3.1.3.jar
 
@@ -301,7 +303,7 @@ public class HashPartitioner<K, V> extends Partitioner<K, V>
   }
 ```
 
-##### 7.排序
+#### 6.排序
 
 ```
 MT&RT均会对数据按照key进行排序，该操作属于Hadoop默认行为
@@ -326,7 +328,7 @@ MR根据输入记录键值对数据集排序，输出的每个文件内部有序
 4.2次排序，compareTo判断条件2个即为2次排序
 ```
 
-##### 8.MT工作机制
+#### 7.MT工作机制
 
 ```
 （1）Read阶段：MapTask通过InputFormat获得的RecordReader，从输入InputSplit中解析出一个个key/value。
@@ -344,7 +346,7 @@ MR根据输入记录键值对数据集排序，输出的每个文件内部有序
 
 ```
 
-##### 9.RT工作机制
+#### 8.RT工作机制
 
 ```
 （1）Copy阶段：ReduceTask从各个MapTask上远程拷贝一片数据，并针对某一片数据，如果其大小超过一定阈值，则写到磁盘上，否则直接放到内存中。（要按行输出所以需要把copy过来的文件优先放在内存中）
@@ -372,11 +374,9 @@ job.setNumReduceTasks(4);
 MapReduce中输出文件的个数与Reduce的个数一致，默认情况下有一个Reduce，输出只有一个文件，文件名为part-r-00000，文件内容的行数与map输出中不同key的个数一致。如果有两个Reduce，输出的结果就有两个文件，第一个为part-r-00000，第二个为part-r-00001，依次类推。
 ```
 
+### 4.OutPutFormat是MR输出基类
 
-
-##### 10.OutPutFormat是MR输出基类
-
-###### 1.常见OutPutFormat实现类
+##### 1.常见OutPutFormat实现类
 
 ```
 1.TextOutPutFormat,它把每条记录记录为文本行，因为TextOutPutFormat调用toString()方法把它们转换为字符串
@@ -384,14 +384,14 @@ MapReduce中输出文件的个数与Reduce的个数一致，默认情况下有�
 3.自定义OutPutFormat,根据用户需求，自定义实现输出
 ```
 
-###### 2.使用场景
+##### 2.使用场景
 
 ```
 1.控制最终文件的输出路径和输出格式，可以自定义OutPUtFormat
 2.自定义步骤，自定义一个类继承FileOutPutFormat，改写RecordWriter,具体改写输出的write方法
 ```
 
-###### 3 实现类
+##### 3 实现类
 
 * OutPutFormat接口定义
 
@@ -429,7 +429,7 @@ public class TextOutputFormat<K, V> extends FileOutputFormat<K, V>
 
 
 
-##### 11.Join多种应用
+### 5.Join多种应用
 
 ###### 1.Reduce Join
 
@@ -457,7 +457,7 @@ MapJoin适用于一张表很大，另外一张表很小
 在map端缓存多张数据表，提前处理业务逻辑。这样增加map端业务。减少Reduce端数局压力
 ```
 
-##### 12 .Job源码分析
+### 6 .Job源码分析
 
 * instance.waitForCompletion跟踪这个函数执行过程
 
@@ -487,6 +487,16 @@ JobStatus submitJobInternal(Job job, Cluster cluster)
 ```
 output.checkOutputSpecs(job);
 //OutputFormat的抽象方法，由FileOutPutFormat实现了checkOutputSpecs检查output-specification的逻辑
+
+```
+
+## 备注
+
+```
+将程序打成jar包，然后拷贝到Hadoop集群中
+hadoop jar  wc.jar
+ com.mrtest.wordcount.WordcountDriver /user/hadoop/input /user/hadoop/output
+
 ```
 
 

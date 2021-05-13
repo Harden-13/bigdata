@@ -201,7 +201,7 @@ Web端查看jobhistory
 		hdfs --daemon start/stop namenode/datanode/secondarynamenode
 	（2）启动/停止YARN
 		yarn --daemon start/stop  resourcemanager/nodemanager
-	 (3)启动历史服务器
+	 (3)启动历史服务器(ha集群配置也是如此，jh是独立的服务，日志数据保留在hdfs里)
 		mapred --daemon start/stop historyserver
 2）各个模块分开启动/停止（配置ssh是前提）常用
 	（1）整体启动/停止HDFS

@@ -9,25 +9,19 @@ hdfs datanode				9866
 hdfs datanode ipc			9867
 hdfs datanode http ui		9864
 yarn rescouceManager		8088
+yarn server jobhistory		10020
+yarn web jobhistory			19888
 ```
 
-##### hadoop port
+##### hadoop ha port
 
 ```
-jobhistory	:	19888
-hdfs webui	:	50070
-ha hdfsrpc	:	8020
-notha hdfs	:	9000
-yarn webui	:	8088
-journalnode :	8485
-zkfs		:	8019
-hdfs namenode				8020/9000
-hdfs namenode http ui		50070
-sencondary namenode			50091
-sencondary namenode http ui	50090
-hdfs datanode				50010
-hdfs datanode ipc			50020
-hdfs datanode http ui		50075
+ResourceManager	:	8033,8088
+NodeManager		:	8040,8042
+namenoderpc		:	8020/9870(web)
+datanode		:	9864,9866,9867
+journalnode 	:	8485,8480
+zkfs			:	8019
 ```
 
 ##### zookeeper
@@ -45,17 +39,7 @@ metastore server	:	9083
 hive jdbc			:	10000
 ```
 
-##### spark
-
-```
-master connect work & commit application	:	7077
-master webui	:	8080
-work webui		:	8081
-driver webui	:	4040
-spark history server web ui	:	18080
-```
-
-##### kafak
+##### kafka
 
 ```
 kafka cluster connect	:	9092
@@ -65,5 +49,15 @@ kafka cluster connect	:	9092
 
 ```
 hue webui	:	8888
+```
+
+##### spark
+
+```
+master connect work & commit application	:	7077
+master webui	:	8080
+work webui		:	8081
+driver webui	:	4040
+spark history server web ui	:	18080
 ```
 
