@@ -3,6 +3,7 @@
 1. ##### architecture overview
 
 ```
+​``` python
 实时节点(realtime node) ：及时摄入实时数据，以及生成segment数据文件
 历史节点(historical node) : 加载已经生成好的数据文件，以供数据查询
 查询节点(broker node) : 对外提供数据查询，并同时从实时节点与历史节点查询数据，合并后返回调用方
@@ -10,6 +11,7 @@
 元数据库(metastore) : 存储druid集群的原始信息，比如segment的相关信息，一般使用mysql
 分布式协调服务(coordination) : 为durid集群提供一致性协调服务组件，通常为zookeeper
 数据文件库存储(deepstorage) : 存放生成segment文件，并提供历史节点下载，对于单点集群可以是本地磁盘，分布式一般是hdfs
+​```
 ```
 
 ##### druid component

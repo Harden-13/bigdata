@@ -5,7 +5,8 @@
 ```
 1.mysql5.7(存储hive元数据)
 2.hive3.1.2
-3.启动用户，保持和hadoop集群一致
+3.mysql驱动
+4.启动用户，保持和hadoop集群一致
 ```
 
 #### 2.mysql安装

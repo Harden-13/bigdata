@@ -45,6 +45,13 @@ hive jdbc			:	10000
 kafka cluster connect	:	9092
 ```
 
+##### hbase
+
+```
+hmaster	:	16010|16000
+hregionserver	:	16030|16020
+```
+
 ##### hue
 
 ```
