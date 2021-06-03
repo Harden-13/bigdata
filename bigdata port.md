@@ -68,3 +68,11 @@ driver webui	:	4040
 spark history server web ui	:	18080
 ```
 
+###### spark Ha
+
+```
+Master监控页面默认访问端口为8080，但是可能会和Zookeeper冲突，所以改成8989，也可以自定义，访问UI监控页面时请注意
+SPARK_MASTER_WEBUI_PORT=8989
+
+```
+
