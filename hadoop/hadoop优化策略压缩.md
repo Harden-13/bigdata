@@ -48,7 +48,7 @@ hadoop fs -put test hdfs://hadoop0:8020/
 从上述中明显（500M）可以看到：gzip格式的数据，不支持切分的真正含义，并不是说HDFS不会将文件分布式的存储在各个节点，而是在计算的时候，不支持切分，也就是仅仅有一个split，从而也就是仅有一个map，这样的效率是及其低下的。
 ```
 
-#### 2.lzo压缩
+#### 2.lzo压缩（已过时）
 
 * 编译lzo
 
@@ -89,4 +89,8 @@ hadoop jar /opt/module/hadoop/share/hadoop/common/hadoop-lzo-0.4.20.jar  com.had
 #执行测试mr
 hadoop jar /opt/module/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.1.3.jar wordcount -Dmapreduce.job.inputformat.class=com.hadoop.mapreduce.LzoTextInputFormat /input /output1
 ```
+
+#### 3.snappy
+
+#### 4.zstd(目前hadoop有bug)
 

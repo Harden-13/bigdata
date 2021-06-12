@@ -1,5 +1,13 @@
 ## kafka进阶
 
+```
+//Todo
+消费端事务，下游用mysql
+幂等性
+```
+
+
+
 ### 1.kafka架构
 
 #### 1.topic & partition & broker

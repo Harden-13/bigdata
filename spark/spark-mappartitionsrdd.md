@@ -14,6 +14,20 @@
 源码里有partition分区参数的多半都是设计到shuffle
 ```
 
+| combineByKeyWithClassTag |      |
+| ------------------------ | ---- |
+| groupby                  |      |
+| groupByKey               |      |
+| reduceByKey              |      |
+| aggregateByKey           |      |
+| foldByKey                |      |
+| combineByKey             |      |
+|                          |      |
+|                          |      |
+|                          |      |
+
+
+
 ### 1.map
 
 * 源码
@@ -539,6 +553,14 @@ dataRDD3.saveAsTextFile("output")
 dataRDD3.collect().foreach(println(_))
 ```
 
+* 含义
+
+```
+reduceByKey就是对元素为KV对的RDD中Key相同的元素的Value进行binary_function的reduce操作，因此，Key相同的多个元素的值被reduce为一个值，然后与原RDD中的Key组成一个新的KV对。
+```
+
+
+
 ### 12.coalesce*
 
 * 案例
@@ -791,7 +813,7 @@ combOp: (U, U) => U	//(分区间1的U2,分区间2的U2)
 RDD[(K, U)]	//返回类型还是（k类型不变,U类型改变为其他类型集合）
 ```
 
-### 17.foldbykey*&!
+### 17.foldbykey*&
 
 * 实例
 
@@ -880,7 +902,7 @@ RDD[(K, C)]  //(k：类型不变，V：类型改变)
 //combilebyKey(参数1，参数2，参数3) 区别于 aggregatebyKey(参数1)(参数2，参数3)
 ```
 
-### 19.sortbykey&*&
+### 19.sortbykey*&
 
 * 源码
 
@@ -1033,6 +1055,14 @@ val rdd = sc.makeRDD(List(1,4,3,2),2)
 // reduce算子
 val i: Int = rdd.reduce(_ + _)
 ```
+
+* 使用
+
+```
+reduce将RDD中元素前两个传给输入函数，产生一个新的return值，新产生的return值与RDD中下一个元素（第三个元素）组成两个元素，再被传给输入函数，直到最后只有一个值为止。
+```
+
+
 
 ### 3.count,first,take,takeOrdered*
 

@@ -1,5 +1,14 @@
 ### HIVE
 
+* hive 功能结构
+
+```
+1.把数据生成表格由hive metastore服务提供
+2.sql转换mapreduce由hive hiveserver2服务提供
+```
+
+
+
 #### 1.hive预先安装环境
 
 ```
@@ -323,5 +332,14 @@ load data local inpath '/opt/src/hive_test.txt' into table datatype;
 
 ```
 select name, friends[0],children["ccc"],address.street from datatype;
+```
+
+#### 8.idea连接hive
+
+* idea maven依赖目录$USER\.m2\repository\org\apache\hive\hive-common\3.1.2\hive-common-3.1.2.jar
+
+```
+idea 2019.2.3 
+reference ：https://zhuangyea.github.io/2019/05/06/idea/%E4%BD%BF%E7%94%A8IDEA%20Database%20Tool%E8%BF%9E%E6%8E%A5Hive%E6%95%B0%E6%8D%AE%E5%BA%93/
 ```
 

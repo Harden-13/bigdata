@@ -4,13 +4,14 @@
 
 ##### 1.MR支持编码
 
-| 压缩格式 | 算法    | 文件扩展名 | 是否可切分 |
-| -------- | ------- | ---------- | ---------- |
-| DEFLATE  | DEFLATE | .deflate   | 否         |
-| Gzip     | DEFLATE | .gz        | 否         |
-| bzip2    | bzip2   | .bz2       | 是         |
-| LZO      | LZO     | .lzo       | 是         |
-| Snappy   | Snappy  | .snappy    | 否         |
+| 压缩格式         | 算法    | 文件扩展名 | 是否可切分 |
+| ---------------- | ------- | ---------- | ---------- |
+| DEFLATE          | DEFLATE | .deflate   | 否         |
+| Gzip             | DEFLATE | .gz        | 否         |
+| bzip2            | bzip2   | .bz2       | 是         |
+| LZO(过时)        | LZO     | .lzo       | 是         |
+| Snappy(用的最多) | Snappy  | .snappy    | 否         |
+| zstd(潮流)       |         |            |            |
 
 ##### 2.编码解码器
 
