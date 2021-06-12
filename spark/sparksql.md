@@ -581,3 +581,200 @@ val spark: SparkSession = SparkSession
   .getOrCreate()				     
 ```
 
+## 四.案例
+
+```scala
+package com.rocky.sparksql
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.expressions.Aggregator
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession, functions}
+
+import scala.collection.mutable
+
+object tmac {
+  {
+    System.setProperty("HADOOP_USER_NAME","hadoop")
+  }
+  def main(args: Array[String]): Unit = {
+    val sparkSession: SparkSession = SparkSession.builder()
+      .master("local[2]")
+      .enableHiveSupport()
+      .config("spark.hadoop.dfs.nameservices","mycluster")
+      .config("spark.hadoop.dfs.ha.namenodes.mycluster","nn1,nn2")
+      .config("spark.hadoop.dfs.namenode.rpc-address.mycluster.nn1","hadoop0:8020")
+      .config("spark.hadoop.dfs.namenode.rpc-address.mycluster.nn2","hadoop1:8020")
+      .config("spark.hadoop.dfs.namenode.rpc-address.mycluster.nn3","hadoop2:8020")
+
+      .config("spark.hadoop.dfs.client.failover.proxy.provider.mycluster","org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider")
+
+      .appName("SparkSQL")
+      .getOrCreate()
+    import sparkSession.implicits._
+    //读取Hive数据,各区域热门商品top3
+/*    +-------+---------+----+
+    |city_id|city_name|area|
+    +-------+---------+----+
+    |      1|     北京|华北|
+      +----------+-------+--------------------+-------+-------------------+--------------+-----------------+----------------+------------------+-----------------+----------------+---------------+-------+
+    |      date|user_id|          session_id|page_id|        action_time|search_keyword|click_category_id|click_product_id|order_category_ids|order_product_ids|pay_category_ids|pay_product_ids|city_id|
+    +----------+-------+--------------------+-------+-------------------+--------------+-----------------+----------------+------------------+-----------------+----------------+---------------+-------+
+    |2019-07-17|     95|26070e87-1ad7-49a...|     37|2019-07-17 00:00:02|          手机|               -1|              -1|              null|             null|            null|           null|      3|
+      +----------+------------+-----------+
+    |product_id|product_name|extend_info|
+    +----------+------------+-----------+
+    |         1|      商品_1|       自营|*/
+
+/*    sparkSession.sql("use  school")
+    sparkSession.sql("select * from school.city_info").show()
+    sparkSession.sql("select * from school.user_visit_action").show()
+    sparkSession.sql("select * from school.product_info").show()
+    sparkSession.sql("use  school")*/
+    sparkSession.udf.register("city_mark", functions.udaf(new CityAggr))
+
+    sparkSession.sql(
+    """
+      |select
+      | area,
+      | product_name,
+      | count(1) click_count,
+      | city_mark(city_name) as city_mark
+      |from
+      | school.user_visit_action user
+      | join school.city_info city on user.city_id == city.city_id
+      | join school.product_info product on user.click_product_id == product.product_id where click_product_id !=-1
+      |group by
+      | area, product_name
+      |""".stripMargin).createOrReplaceTempView("t1")
+/*    +----+------------+-----------+-------------------------+
+    |华东|     商品_53|        345| 杭州 17.0%,上海 14.0%...|
+    |华东|     商品_72|        311| 青岛 18.0%,上海 16.0%...|*/
+    sparkSession.sql(
+      """
+        |select
+        | area,
+        | product_name,
+        | click_count,
+        | rank() over(partition by area order by click_count desc) as sr,
+        | city_mark
+        |from
+        | t1
+        |
+        |""".stripMargin).createOrReplaceTempView("t2")
+
+    sparkSession.sql(
+      """
+        |select
+        | area,product_name,click_count,city_mark,sr
+        |from
+        | t2
+        |where
+        | sr<4
+        |
+        |""".stripMargin).createOrReplaceTempView("t3")
+    sparkSession.sql(
+      """
+        |create table school.resulttop3 select * from t3
+        |""".stripMargin).show()
+
+    /*
+        sparkSession.sql(
+          """
+            |CREATE TABLE `user_visit_action`(
+            |  `date` string,
+            |  `user_id` bigint,
+            |  `session_id` string,
+            |  `page_id` bigint,
+            |  `action_time` string,
+            |  `search_keyword` string,
+            |  `click_category_id` bigint,
+            |  `click_product_id` bigint,
+            |  `order_category_ids` string,
+            |  `order_product_ids` string,
+            |  `pay_category_ids` string,
+            |  `pay_product_ids` string,
+            |  `city_id` bigint)
+            |row format delimited fields terminated by '\t'
+          """.stripMargin)*/
+
+/*    sparkSession.sql("load data local inpath 'data/user_visit_action.txt' into table user_visit_action")
+
+
+    sparkSession.sql(
+      """
+        |CREATE TABLE `product_info`(
+        |  `product_id` bigint,
+        |  `product_name` string,
+        |  `extend_info` string)
+        |row format delimited fields terminated by '\t'
+      """.stripMargin)
+    sparkSession.sql("load data local inpath 'data/product_info.txt' into table product_info")
+    
+    sparkSession.sql(
+      """
+        |CREATE TABLE `city_info`(
+        |  `city_id` bigint,
+        |  `city_name` string,
+        |  `area` string)
+        |row format delimited fields terminated by '\t'
+      """.stripMargin)
+
+    sparkSession.sql("load data local inpath 'data/city_info.txt' into table city_info")*/
+    sparkSession.close()
+  }
+}
+case class CityBuf(var totalCount: Long, var cityMap: mutable.Map[String, Long])
+/*+----+------------+-----------+
+|华东|     商品_72|        311|
+（total:xxxxx,{"bj":xxxx}） bj= xxxx/xxxxx*/
+class CityAggr extends Aggregator[String, CityBuf, String] {
+  override def zero: CityBuf = CityBuf(0L, mutable.Map.empty[String, Long])
+
+  override def reduce(b: CityBuf, a: String): CityBuf = {
+    b.totalCount+=1
+    b.cityMap(a) = b.cityMap.getOrElse(a,0L)+1
+    b
+  }
+
+  override def merge(b1: CityBuf, b2: CityBuf): CityBuf = {
+    b1.totalCount += b2.totalCount
+    b2.cityMap.foreach{
+      case(city,number)=>{
+        b1.cityMap(city) = b1.cityMap.getOrElse(city,0L)+number
+      }
+    }
+    b1
+  }
+
+  override def finish(reduction: CityBuf): String = {
+    //去除citymap前2个
+    val list = reduction.cityMap.toList.sortBy(elem=>elem._2)(Ordering.Long.reverse)
+    val total = reduction.totalCount
+    //（city,number）
+    if(list.size<=2){
+      list.map{
+        case (city,number)=>{
+          city + " " + (number * 100 / total).toDouble  + "%"
+        }
+      }.mkString(",")
+    } else {
+      // take2:List + "其他"：80%
+      val take2: List[(String, Long)] = list.take(2)
+      // (take2:List[(String,Long)],("other",number))
+      val tmp:List[(String,Long)]= take2 :+ ("other",total-take2.map(_._2).sum)
+      tmp.map{
+        case (city,number)=>{
+          city + " " + (number * 100 / total).toDouble  + "%"
+        }
+      }.mkString(",")
+
+    }
+    //if判断是不是小于等于2个
+  }
+  override def bufferEncoder: Encoder[CityBuf] = Encoders.product
+  override def outputEncoder: Encoder[String] = Encoders.STRING
+}
+
+```
+
