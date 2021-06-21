@@ -71,7 +71,7 @@ dept_partition2 partition(day='20200401', hour='12');
 select * from dept_partition2 where day='20200401' and hour='12';
 ```
 
-##### 3.数据分区关联
+##### 3.数据分区关联(数据修复)
 
 * 上传数据后修复
 
@@ -122,6 +122,24 @@ hive.exec.max.created.files=100000
 //当有空分区生成时，是否抛出异常
 hive.error.on.empty.partition=false
 ```
+
+* 需求将dept表中的数据按照地区（loc字段），插入到目标表dept_partition的相应分区中。\
+* 分区表中partition(loc) select, loc from dept 一一对应，或者(partition(bj) select bj)
+
+```sql
+//（1）创建目标分区表
+hive (default)> create table dept_partition_dy(id int, name string) partitioned by (loc int) row format delimited fields terminated by '\t';
+
+//（2）设置动态分区
+set hive.exec.dynamic.partition.mode = nonstrict;
+hive (default)> insert into table dept_partition_dy partition(loc) select deptno, dname, loc from dept;
+//（3）查看目标分区表的分区情况
+hive (default)> show partitions dept_partition;
+<!--思考：目标分区表是如何匹配到分区字段的-->
+
+```
+
+
 
 ####  2.分桶
 

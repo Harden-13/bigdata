@@ -36,6 +36,26 @@ group by
  dept_id
 ```
 
+#### 3.cast
+
+```
+cast(date_add('2021-06-15',-1) as string)
+```
+
+
+
+#### 4.get_json_object
+
+```
+select get_json_object('[{"name":"大郎","sex":"男","age":"25"},{"name":"西门庆","sex":"男","age":"47"}]','$[0]');
+```
+
+```
+SELECT get_json_object('[{"name":"大郎","sex":"男","age":"25"},{"name":"西门庆","sex":"男","age":"47"}]',"$[0].age");
+```
+
+
+
 #### 3.行转列
 
 ##### 1.concat
@@ -62,6 +82,8 @@ CONCAT_WS must be "string or array<string>
 ```
 COLLECT_SET(col)：函数只接受基本数据类型，它的主要作用是将某字段的值进行去重汇总，产生array类型字段
 ```
+
+##### 3.1 collect_list //Todo
 
 ##### 4.实例
 

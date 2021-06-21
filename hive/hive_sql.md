@@ -86,10 +86,28 @@ SerDe是Serialize/Deserilize的简称， hive使用Serde进行行对象的序列
 ###### b.外部表
 
 * 外部表场景
+* drop EXTERNAL table (hive中表没了，但是数据还在hdfs上)
 
 ```
 每天将收集到的网站日志定期流入HDFS文本文件。在外部表（原始日志表）的基础上做大量的统计分析，用到的中间表、结果表使用内部表存储，数据通过SELECT+INSERT进入内部表。
 ```
+
+```sql
+前提：
+	1.创建外部表ods_log
+	2.从/origin_data/gmall/log/topic_log/2020-06-14'导入数据到ods_log，hdfs把原数据移动到ods_log
+	3.删除外部表ods_log，表没有了数据在/warehouse/gmall_test/ods/ods_log目录中
+	4.重新创建外部表ods_log和导入数据的 sql参照下图
+
+create external table  if not exists ods_log (aa string)
+ partitioned by (dt string)
+ LOCATION '/warehouse/gmall_test/ods/ods_log'; -- 指定数据在hdfs上的存储位置
+// 
+load data inpath '/warehouse/gmall_test/ods/ods_log/' into table ods_log
+    partition(dt='2020-06-14') ;
+```
+
+
 
 ###### c.内部表外部表相互转换
 
@@ -307,6 +325,8 @@ where e.deptno is null;
 ```
 
 * FULL(将会返回所有表中符合WHERE语句条件的所有记录)
+* 主表独有的+从表独有的+主从inner join的  
+* <mark>主从inner join的  + 从表独有的 （因为id=id，有id依赖所以不可能出现主表独有）</mark>
 
 ```
 select
@@ -365,6 +385,63 @@ row format delimited fields terminated by '\t' select deptno,empno,sal from emp 
 当distribute by和sort by字段相同时，可以使用cluster by方式。
 cluster by除了具有distribute by的功能外还兼具sort by的功能。但是排序只能是升序排序
 ```
+
+###### 3. UNION 
+
+* syntax
+
+```sql
+select_statement UNION [ALL | DISTINCT] select_statement UNION [ALL | DISTINCT] select_statement ...
+
+用来合并多个select的查询结果，需要保证select中字段须一致，每个select语句返回的列的数量和名字必须一样，否则，一个语法错误会被抛出。
+```
+
+* 可选关键字
+
+```
+使用DISTINCT关键字与使用UNION 默认值效果一样，都会删除重复行
+使用ALL关键字，不会删除重复行，结果集包括所有SELECT语句的匹配行（包括重复行）
+
+Hive 1.2.0和更高版本中，UNION的默认行为是从结果中删除重复的行。
+```
+
+* hive的一个特点
+
+```
+hive的Union All相对sql有所不同,要求列的数量相同,并且对应的列名也相同,但不要求类的类型相同(可能是存在隐式转换吧)
+```
+
+
+
+###### 4. with子查询
+
+* with as是hive中独有 一次分析，多次使用，
+* 使用注意事项
+
+```
+1. with子句必须在引用的select语句之前定义,同级with关键字只能使用一次,多个只能用逗号分割；最后一个with 子句与下面的查询之间不能有逗号，只通过右括号分割,with 子句的查询必须用括号括起来.
+
+2.如果定义了with子句，但其后没有跟select查询，则会报错！
+
+3.前面的with子句定义的查询在后面的with子句中可以使用。但是一个with子句内部不能嵌套with子句！
+```
+
+* 使用
+
+```sql
+WITH t1 AS (
+		SELECT *
+		FROM carinfo
+	), 
+	t2 AS (
+		SELECT *
+		FROM car_blacklist
+	)
+SELECT *
+FROM t1, t2
+```
+
+
 
 ### 显示信息
 

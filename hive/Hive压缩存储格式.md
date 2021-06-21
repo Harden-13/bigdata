@@ -90,7 +90,7 @@ TEXTFILE 、SEQUENCEFILE、ORC、PARQUET
 #### 2.存储特点
 
 ```
-TEXTFILE和SEQUENCEFILE的存储格式都是基于行存储的；
+TEXTFILE(hadoop会默认解析textfile的压缩格式)和SEQUENCEFILE的存储格式都是基于行存储的；
 ```
 
 ```
