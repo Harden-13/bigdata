@@ -326,7 +326,7 @@ where e.deptno is null;
 
 * FULL(将会返回所有表中符合WHERE语句条件的所有记录)
 * 主表独有的+从表独有的+主从inner join的  
-* <mark>主从inner join的  + 从表独有的 （因为id=id，有id依赖所以不可能出现主表独有）</mark>
+* <mark>~~主从inner join的  + 从表独有的 （因为id=id，有id依赖所以不可能出现主表独有）~~</mark>
 
 ```
 select

@@ -54,7 +54,26 @@ select get_json_object('[{"name":"大郎","sex":"男","age":"25"},{"name":"西�
 SELECT get_json_object('[{"name":"大郎","sex":"男","age":"25"},{"name":"西门庆","sex":"男","age":"47"}]',"$[0].age");
 ```
 
+#### 5.coalesce
 
+* 使用
+
+```
+COALESCE(T v1, T v2, ...)
+Returns the first v that is not NULL, or NULL if all v's are NULL.
+```
+
+#### 6.date_format
+
+* 使用
+
+```
+date_Format(date_param, 'yyyy-MM-dd')
+```
+
+
+
+#### 7.date_add
 
 #### 3.行转列
 
