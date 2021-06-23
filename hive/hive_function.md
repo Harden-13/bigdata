@@ -71,11 +71,142 @@ Returns the first v that is not NULL, or NULL if all v's are NULL.
 date_Format(date_param, 'yyyy-MM-dd')
 ```
 
-
-
 #### 7.date_add
 
-#### 3.行转列
+* 加减日期
+
+```
+hive (test)> select date_add('2021-06-14',-1);
+2021-06-13
+```
+
+#### 8.next_day
+
+* 取当前天的下一个周一
+
+```
+select next_day('2020-06-14','MO');
+星期一到星期日的英文（Monday，Tuesday、Wednesday、Thursday、Friday、Saturday、Sunday）
+```
+
+* 取当前周的周一
+
+```
+select date_add(next_day('2020-06-14','MO'),-7);
+2020-06-8
+```
+
+* 当月最后一天
+
+```
+select last_day('2020-06-14');
+2020-06-30
+```
+
+#### 9.str_to_map
+
+* Convert string to map
+* str_to_map(text[, delimiter1, delimiter2])
+* For delimiter1 the default separator is ',', for delimiter2 the default separator is '='.
+
+```
+
+```
+
+#### 10.数据结构定义
+
+```
+1）map结构数据定义
+map<string,string>
+2）array结构数据定义
+array<string>
+3）struct结构数据定义
+struct<id:int,name:string,age:int>
+4）struct和array嵌套定义
+array<struct<id:int,name:string,age:int>>
+```
+
+| func         | params                            | desc                                                         |
+| ------------ | --------------------------------- | ------------------------------------------------------------ |
+| named_struct | (name1, val1, name2, val2, ...)   | Creates a struct with the given field names and values. (As of Hive [0.8.0](https://issues.apache.org/jira/browse/HIVE-1360).) |
+| struct       | (val1, val2, val3, ...)           | Creates a struct with the given field values. Struct field names will be col1, col2, .... |
+| map          | (key1, value1, key2, value2, ...) | Creates a map with the given key/value pairs.                |
+| array        | (val1, val2, ...)                 | Creates an array with the given elements.                    |
+
+* reference
+
+```
+https://cwiki.apache.org/confluence/display/Hive/LanguageManual+UDF
+```
+
+
+
+#### 11.named_struct
+
+* 定义
+
+```
+ARRAY<STRUCT<sale_attr_id:STRING,sale_attr_value_id:STRING,sale_attr_name:STRING,sale_attr_value_name:STRING>> COMMENT '销售属性'
+```
+
+* 使用
+
+```
+collect_list(named_struct('attr_id',attr_id,'value_id',value_id,'attr_name',attr_name,'value_name',value_name)) attrs
+```
+
+#### 12.array_contains
+
+* 使用
+
+| 返回值  | 参数                            | 描述                                      |
+| ------- | ------------------------------- | ----------------------------------------- |
+| boolean | array_contains(Array<T>, value) | Returns TRUE if the array contains value. |
+|         |                                 |                                           |
+
+#### 13.count & sum
+
+* sum
+
+```sql
+将某列进行累加(如果某行的列的为null则忽略
+sum(1)为1统计 ,sum(1)统计个数，功能和count（*）一样，但效率上count（*）高。所以尽量少用。
+sum(0)为0不统计
+sum(2)结果乘2
+sum(id) 累加
+```
+
+* count
+
+```sql
+统计有效行(非null)
+count(*)：所有行进行统计，包括NULL行
+count(1)：所有行进行统计，包括NULL行
+count(0)：所有行进行统计，包括NULL行
+count(column)：对column中非Null进行统计
+
+
+```
+
+* 通用
+
+```
+count,sum都是统计汇总函数，相同点都是用来求和
+```
+
+* 不同点
+
+```
+count 一般用于统计行数，例如统计一天一共有多少人来逛街：
+sum 一般用于统计某一列的总和，例如统计一天一共收入多少钱：
+
+sum 一般用于统计某一列的总和，例如统计一天一共收入多少钱：
+count + distinct (统计一个月内顾客的消费频率)
+```
+
+
+
+### 2.行转列
 
 ##### 1.concat
 
@@ -132,7 +263,7 @@ group by
  t1.con_blood
 ```
 
-#### 4.列转行
+### 4.列转行
 
 ##### 1.EXPLODE(col)
 
@@ -168,7 +299,7 @@ lateral view
  explode(split(category,',')) movie_info_tmp as catagory_name;
 ```
 
-#### 5. over开窗
+### 5. over开窗
 
 ##### 1.over
 
@@ -339,7 +470,7 @@ over(partition by ... order by ... rows between ... and ....) : 指定每条数�
 
 ```
 
-####  6. 关键字分类
+###  6. 关键字分类
 
 * 分类
 
@@ -355,7 +486,7 @@ over(partition by ... order by ... rows between ... and ....) : 指定每条数�
   clustered by :   建表指定分桶字段
 ```
 
-### 2.排名
+### 7.排名
 
 #### 1.rank
 
