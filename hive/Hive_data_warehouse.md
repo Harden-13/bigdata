@@ -2378,102 +2378,2262 @@ b(dt=99-99)-->o
 o-->c(dt=6-15)
 ```
 
-#### 1.访问主题
 
-* 创建表
+
+##  4.DWS/DWT层
+
+```mermaid
+graph LR
+A(Dws)--6.15每日dws to dwt的过程-->B(Dwt)
+G(dwt.dt=6.14)--full-->C(dws.1d_ago,dt=6.15)
+H(1d_ago,dt=6.15)--left-->D(dws.7d_ago)
+H--为了显示更好看-->C
+D-->E(dws.30d_ago)
+E--left-->F(dwt)
+
+Z(dwt累计才能做1d,7d,30d操作)
+```
+
+
+
+### 4.1 DWS/DWT思想
 
 ```sql
-DROP TABLE IF EXISTS dws_visitor_action_daycount;
-CREATE EXTERNAL TABLE dws_visitor_action_daycount
+-- 1. dwd层和dws/dwt的区别？
+     	DWD层建表时不要考虑用户的需求，而dws和dwd层，以用户需求为驱动，统计各个维度的相关指标；
+    
+-- 2. dws和dwt都是建宽表，建宽表的目的是优化查询,减少重复查询的步骤。
+
+-- 3. 用户后续的需求是什么样的呢？
+       主要是报表，体现的指标有个数、次数、金额等指标。
+       '体现的方式'：维度 + 时间 + 指标
+       '案例'：
+           a、地区维度：北京地区今天的下单金额
+           b、商品维度：1号商品今天下单数量
+
+-- 4. 建宽表的思路：
+        1. 一个维度作为一个宽表；
+        2. 字段：以维度作为关键字 + 和该维度相关的所有事实表的度量值
+    
+-- 5. DWS和DWT的主要区别：
+       1. dws的数据来源于DWD层，站在维度的角度，看事实表的度量值，统计每个主题当天的行为
+       2. dwt的主要数据来源dws，站在维度的角度，看事实表的开始时间、结束时间、累积到现在的度量值，累积一段时间的度量值，
+       统计每个主题累计行为，如统计最近7天的下单金额。
+
+-- 6. 宽表是应对一些常用的需求，并不是所有的需求都会包含进来，如果一些特殊需求，可以去到dwd层获取数据
+```
+
+### 4.2 用户行为数据
+
+#### 4.2.1 每日设备DWS层
+
+- 建表语句
+
+```sql
+drop table if exists dws_uv_detail_daycount;
+create external table dws_uv_detail_daycount
 (
-    `mid_id` STRING COMMENT '设备id',
-    `brand` STRING COMMENT '设备品牌',
-    `model` STRING COMMENT '设备型号',
-    `is_new` STRING COMMENT '是否首次访问',
-    `channel` ARRAY<STRING> COMMENT '渠道',
-    `os` ARRAY<STRING> COMMENT '操作系统',
-    `area_code` ARRAY<STRING> COMMENT '地区ID',
-    `version_code` ARRAY<STRING> COMMENT '应用版本',
-    `visit_count` BIGINT COMMENT '访问次数',
-    `page_stats` ARRAY<STRUCT<page_id:STRING,page_count:BIGINT,during_time:BIGINT>> COMMENT '页面访问统计'
-) COMMENT '每日设备行为表'
-PARTITIONED BY(`dt` STRING)
-STORED AS ORC
-LOCATION '/warehouse/gmall_test/dws/dws_visitor_action_daycount'
-TBLPROPERTIES ("orc.compress"="snappy");
+    `mid_id` string, 
+    `brand` string, 
+    `model` string, 
+    `login_count` bigint COMMENT '活跃次数',
+    `page_stats` array<struct<page_id:string,page_count:bigint>> COMMENT '页面访问统计'
+)
+partitioned by(dt string)
+stored as parquet
+location '/warehouse/gmall/dws/dws_uv_detail_daycount';
+```
+
+- 加载数据
+
+```sql
+with 
+tmp_start_log as (
+    select 
+        mid_id , 
+        brand , 
+        model,
+        count(*) login_count
+    from dwd_start_log 
+    where dt = '2020-06-25'
+    group by mid_id,brand,model
+),
+tmp_page_log as (
+    select 
+            mid_id , 
+            brand , 
+            model,      
+            collect_set(named_struct("page_id",page_id,"page_count",page_count)) page_stats
+    from  (
+            select 
+                mid_id , 
+                brand , 
+                model,
+                page_id,
+                count(*) page_count     
+            from dwd_page_log
+            where dt ='2020-06-25'
+            group by  mid_id ,brand,model,page_id
+        )tmp
+    group by  mid_id ,brand,model
+)
+
+insert overwrite table dws_uv_detail_daycount partition(dt='2020-06-25')
+
+select 
+        tmp_start_log.mid_id , 
+        tmp_start_log.brand , 
+        tmp_start_log.model,
+        login_count,
+        page_stats
+from  tmp_start_log 
+join tmp_page_log 
+on tmp_start_log.mid_id = tmp_page_log.mid_id
+and tmp_start_log.brand = tmp_page_log.brand
+and tmp_start_log.model = tmp_page_log.model
+
+```
+
+#### 4.2.2 设备主题DWT层
+
+- 建表语句
+
+```sql
+drop table if exists dwt_uv_topic;
+create external table dwt_uv_topic
+(
+    `mid_id` string,
+    `brand` string,
+    `model` string,
+    `login_date_first` string  comment '首次活跃时间',
+    `login_date_last` string  comment '末次活跃时间',
+    `login_day_count` bigint comment '当日活跃次数',
+    `login_count` bigint comment '累积活跃天数'
+)
+stored as parquet
+location '/warehouse/gmall/dwt/dwt_uv_topic';
+```
+
+- 插入数据
+
+```sql
+insert overwrite table dwt_uv_topic
+select 
+    nvl(old.mid_id,new.mid_id),
+    nvl(old.brand,new.brand),
+    nvl(old.model,new.model),
+    if(old.login_date_first is null and new.login_count > 0 ,'2020-06-25',old.login_date_first),
+    if(new.login_count > 0 ,'2020-06-25',old.login_date_last),
+    nvl(new.login_count,0),
+    nvl(old.login_count,0) + if(new.login_count> 0 , 1 ,0)
+from dwt_uv_topic old 
+full join (
+    select 
+        mid_id , 
+        brand , 
+        model, 
+        login_count
+    from dws_uv_detail_daycount
+    where dt ='2020-06-25'
+)new 
+on old.mid_id = new.mid_id
+```
+
+
+
+### 4.3 业务数据
+
+#### 4.3.1 会员行为
+
+##### 4.3.1.1 会员DWS层
+
+```sql
+-- 1. 建表过程：
+   '准备'：  事实表：订单、订单详情、优惠券领用、支付、退款、收藏、加购物车、评价
+   '第一步'：找到和用户维度相关的所有事实表：订单、订单详情、优惠券领用、支付、退款、收藏、加购物车、评价
+   '第二步': 找到这些事实表的所有度量值字段：
+   '第三步'：维度主键 + 第二步获取的字段作为dws宽表的字段。
+   -- 备注：理论上上述所有事实表都需要进行统计，但是在本案例中，只统计了订单、订单详情表、支付，加购物车四个事实表的数据。
+-- 2. 数据的来源：来自于DWD层
+-- 3. 表中的数据说明：
+      1. 是分区表，每个分区为当天的数据
+      2. 每一行数据代表一个用户当天的行为
+-- 4. 根据建表字段，确定每个字段来自于哪张表中
+-- 5. 数据存储格式：列式存储 + lzo压缩
+```
+
+- 建表语句
+
+```sql
+drop table if exists dws_user_action_daycount;
+create external table dws_user_action_daycount
+(   
+    user_id string comment '用户 id',
+    login_count bigint comment '登录次数',
+    cart_count bigint comment '加入购物车次数',
+    order_count bigint comment '下单次数',
+    order_amount    decimal(16,2)  comment '下单金额',
+    payment_count   bigint      comment '支付次数',
+    payment_amount  decimal(16,2) comment '支付金额',
+    order_detail_stats array<struct<sku_id:string,sku_num:bigint,order_count:bigint,order_amount:decimal(20,2)>> comment '下单明细统计'
+) COMMENT '每日用户行为'
+PARTITIONED BY (`dt` string)
+stored as parquet
+location '/warehouse/gmall/dws/dws_user_action_daycount/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 第一步：确定各个字段来自哪个表
+
+```sql
+user_id string comment '用户 id',--从dwd_start_log获取 
+    login_count bigint comment '登录次数', --从dwd_start_log获取
+    cart_count bigint comment '加入购物车次数',--dwd_action_log
+    order_count bigint comment '下单次数',--dwd_fact_order_info 
+    order_amount    decimal(16,2)  comment '下单金额',--dwd_fact_order_info 
+    payment_count   bigint      comment '支付次数',--dwd_fact_order_info 
+    payment_amount  decimal(16,2) comment '支付金额',--dwd_fact_order_info 
+    order_detail_stats array<struct<sku_id:string,sku_num:bigint,order_count:bigint,order_amount:decimal(20,2)>> comm
+	  -- dwd_fact_order_detail
+	 说明：1. 加入购车的数据，需要去启动日志中获取，因为加购事实表是每天一个快照，不保留中间操作的过程，所以去到日志action
+	      	获取，点击一次加购物车操作，记一次加入购物车的次数
+	      2. 用户登录次数，从启动日志中获取，启动一次算作今天登录一次，但是要注意有些登录不是会员，所以需要过滤user_id为
+	         null的数据；
+```
+
+- 第二步：确定dws一行数据代表什么意思？
+
+```
+用户行为表的一行数据代表：一个用户今天登陆次数、加购物车数量、下单数量、下单金额等数据
+```
+
+- 第三步：确定dwd层所有相关表的同步策略
+
+```sql
+   'dwd_start_log'：每日新增数据
+   'dwd_action_log'：每日新增数据
+   'dwd_fact_order_info'：事务型
+   'dwd_fact_order_detail'：事务型
+   'dwd_fact_payment_info':事务型
+```
+
+- 第四步：从各个表中获取对应的字段
+
+```sql
+ -- 1. 获取用户id和登录次数
+	select 
+		  user_id,
+		  count(*) login_count
+	from dwd_start_log
+	where dt='2020-06-25'
+	and user_id is not null 
+	group by user_id
+	---------------------------------------------
+	-- 2. 获取加购物车的次数
+	
+		 select
+			user_id,
+			count(*) cart_count
+		from dwd_action_log
+		where dt='2020-06-25'
+		and user_id is not null
+		and action_id='cart_add'
+		group by user_id		
+	
+  ------------------------------------------ 
+   -- 3. 获取下单的次数和下单金额
+		
+	select
+		user_id,
+		count(*) order_count
+	sum(final_total_amount)  order_amount
+	from dwd_fact_order_info
+	where dt = '2020-06-25'
+	group by user_id
+   
+   ------------------------------------------------
+   -- 4. 获取支付的金额和支付次数
+  
+	 select
+		 user_id,
+		 count(*) payment_count,
+		 sum(payment_amount) payment_amount
+	 from dwd_fact_payment_info
+	 where dt = '2020-06-25'
+	 group by user_id  
+   
+   ----------------------------------------------
+   -- 5. 获取下单明细
+	   select 
+			user_id,
+			collect_set(named_struct("sku_id",sku_id,"sku_num",sku_num,"order_count",order_count,"order_amount",order_amount))order_detail_stats
+	   from (
+		   select 
+			  user_id,
+			  sku_id,
+			  sum(sku_num) sku_num,
+			  count(*) order_count,
+			  cast(sum(final_amount_d) as demical(20,2)) order_amount 
+		   from dwd_fact_order_detail 
+		   where dt = '2020-06-25'
+		   group by user_id,sku_id
+	   )tmp
+	   group by user_id
+```
+
+- 第五步：组装以后插入数据
+
+```sql
+with 
+    tmp_start_log as (
+    select 
+          user_id,
+          count(*) login_count
+    from dwd_start_log
+    where dt='2020-06-25'
+    and user_id is not null 
+    group by user_id
+    ),
+    tmp_action_log as (
+         select
+            user_id,
+            count(*) cart_count
+        from dwd_action_log
+        where dt='2020-06-25'
+        and user_id is not null
+        and action_id='cart_add'
+        group by user_id        
+    ),
+    tmp_order_info as (
+    
+    select
+        user_id,
+        count(*) order_count,
+        sum(final_total_amount)  order_amount
+    from dwd_fact_order_info
+    where dt = '2020-06-25'
+    group by user_id
+    ),
+    tmp_payment_info as (
+     select
+         user_id,
+         count(*) payment_count,
+         sum(payment_amount) payment_amount
+     from dwd_fact_payment_info
+     where dt = '2020-06-25'
+     group by user_id  
+   ),
+   tmp_order_detail as (
+       select 
+            user_id,
+            collect_set(named_struct("sku_id",sku_id,"sku_num",sku_num,"order_count",order_count,"order_amount",order_amount)) order_detail_stats
+       from (
+           select 
+              user_id,
+              sku_id,
+              sum(sku_num) sku_num,
+              count(*) order_count,
+              cast(sum(final_amount_d) as decimal(20,2)) order_amount 
+           from dwd_fact_order_detail 
+           where dt = '2020-06-25'
+           group by user_id,sku_id
+       )tmp
+       group by user_id
+    )
+    
+    insert overwrite table dws_user_action_daycount partition (dt='2020-06-25')
+    select   
+        tmp_start_log.user_id ,
+        login_count ,
+        nvl(cart_count,0) ,
+        nvl(order_count,0) ,
+        nvl(order_amount,0.0)   ,
+        nvl(payment_count,0)  ,
+        nvl(payment_amount,0.0) ,
+        order_detail_stats       
+    from  tmp_start_log 
+    left join tmp_action_log on tmp_start_log.user_id = tmp_action_log.user_id
+    left join tmp_order_info on tmp_start_log.user_id = tmp_order_info.user_id
+    left join tmp_payment_info on tmp_start_log.user_id = tmp_payment_info.user_id
+    left join tmp_order_detail on  tmp_start_log.user_id = tmp_order_detail.user_id
+```
+
+
+
+##### 4.3.1.2 会员DWT层
+
+```sql
+-- 1. 说明：
+      1. dwt和dws层的字段基本是一一对应的。
+      2. dws是当天的数据，dwt是累积数据，累积涉及到时间，比如累积7天，累积3天
+-- 2. dwt和dws的维度字段，我们也可以直接放到表中，后续统计需求可以用到。
+
+-- 3. dwt数据说明：
+     1. 是维度全量表
+     2. 数据源来自于dws层
+     3. 不是分区表
+ 
+-- 4. 如何维护dwt表，即如何向这个全量表中插入数据？
+    1. dwt的数据每天都需要进行更新；
+    2. 更新涉及到新数据和老数据
+    3. 更新方式：
+       a、取累积时间周期的数据；
+       b、如果是累积字段，使用聚合函数求值
+       c、如果非累积字段，使用判断语句求当天的数据
+       d、然后新旧数据今天合并，由于旧数据不是分区数据
+         那么累积数据直接使用新表累积值，而非累积字段，采用更新的方式
+```
+
+- 建表语句
+
+```sql
+drop table if exists dwt_user_topic;
+create external table dwt_user_topic
+(
+    user_id string  comment '用户id',
+    login_date_first string  comment '首次登录时间',
+    login_date_last string  comment '末次登录时间',
+    login_count bigint comment '累积登录天数',
+    login_last_30d_count bigint comment '最近30日登录天数',
+    order_date_first string  comment '首次下单时间',
+    order_date_last string  comment '末次下单时间',
+    order_count bigint comment '累积下单次数',
+    order_amount decimal(16,2) comment '累积下单金额',
+    order_last_30d_count bigint comment '最近30日下单次数',
+    order_last_30d_amount bigint comment '最近30日下单金额',
+    payment_date_first string  comment '首次支付时间',
+    payment_date_last string  comment '末次支付时间',
+    payment_count decimal(16,2) comment '累积支付次数',
+    payment_amount decimal(16,2) comment '累积支付金额',
+    payment_last_30d_count decimal(16,2) comment '最近30日支付次数',
+    payment_last_30d_amount decimal(16,2) comment '最近30日支付金额'
+ )COMMENT '用户主题宽表'
+stored as parquet
+location '/warehouse/gmall/dwt/dwt_user_topic/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 分析
+
+```sql
+	旧表：dwt前一天的数据
+   新表：从dws层获取的累积30天的数据
+    user_id string  comment '用户id', --
+    login_date_first string  comment '首次登录时间',--如果旧表中有登录时间就使用旧表中的时间，否则使用当天时间
+    login_date_last string  comment '末次登录时间',-- 如果新表中今天的登入次数大于0，那么末次登录时间使用今天时间，否则使用旧时间
+    login_count bigint comment '累积登录天数', -- 如果新表中的登入次数大于0，那么旧表中数据 + 1 
+    login_last_30d_count bigint comment '最近30日登录天数', -- 使用新表中累积计算数据，如果为null，则选择0
+    order_date_first string  comment '首次下单时间',-- 如果旧表中首次下单时间为null且新表中下单次数大于0，那么使用今天时间，否则使用旧表数据
+    order_date_last string  comment '末次下单时间',-- 如果新表的下单数据大于0，则使用当天时间，否则使用旧表数据
+    order_count bigint comment '累积下单次数',-- 将旧表下单数据和新表下单次数直接相加
+    order_amount decimal(16,2) comment '累积下单金额',--将旧表下单金额和新表下单金额相加
+    order_last_30d_count bigint comment '最近30日下单次数',--直接使用新表数据，如果新表数据为null，则使用0
+    order_last_30d_amount bigint comment '最近30日下单金额',--直接使用新表数据，如果新表数据为null，则使用0
+    payment_date_first string  comment '首次支付时间',
+    payment_date_last string  comment '末次支付时间',
+    payment_count decimal(16,2) comment '累积支付次数',
+    payment_amount decimal(16,2) comment '累积支付金额',
+    payment_last_30d_count decimal(16,2) comment '最近30日支付次数',
+    payment_last_30d_amount decimal(16,2) comment '最近30日支付金额'
+```
+
+
+
+- 装载数据
+
+```sql
+ insert overwrite table dwt_user_topic 
+   select 
+       nvl(old.user_id,new.user_id) ,
+       nvl(old.login_date_first,'2020-06-25'),
+       if(new.user_id is not null , '2020-06-25',old.login_date_last),
+       nvl(old.login_count,0) + if(new.user_id is not null,1,0),
+       nvl(new.login_last_30d_count,0),
+       if(old.order_date_first is null and new.order_count > 0 , '2020-06-25',old.order_date_first),
+       if(new.order_count > 0,'2020-06-25',old.order_date_first),
+       nvl(old.order_count,0) + nvl(new.order_count,0),
+       nvl(old.order_amount,0) + nvl(new.order_amount,0),
+       nvl(new.order_last_30d_count,0),
+       nvl(new.order_last_30d_amount,0),
+       if(old.payment_date_first is null and new.payment_count > 0 ,'2020-06-25',old.payment_date_first),
+       if(new.payment_count > 0 ,'2020-06-25',old.payment_date_last),
+       nvl(old.payment_count,0) + nvl(new.payment_count,0),
+       nvl(old.payment_amount,0) + nvl(new.payment_amount,0),
+       nvl(new.payment_last_30d_count,0),
+       nvl(new.payment_last_30d_amount,0)
+   
+   from  dwt_user_topic old
+   full join (
+       select 
+           user_id,
+           sum(if(dt='2020-06-25',login_count,0)) login_count,--当天登录次数
+           sum(if(dt='2020-06-25',cart_count,0)) cart_count,--当天加入购物车次数
+           sum(if(dt='2020-06-25',order_count,0)) order_count,--当天下单次数
+           sum(if(dt='2020-06-25',order_amount,0.0)) order_amount,--当天下单金额
+           sum(if(dt='2020-06-25',payment_count,0)) payment_count,--当天支付次数
+           sum(if(dt='2020-06-25',payment_amount,0.0)) payment_amount,--当天支付金额
+        
+           sum(if(login_count > 0,1,0)) login_last_30d_count,--累积30天登录次数
+           sum(order_count) order_last_30d_count,--最近30日下单次数
+           sum(order_amount) order_last_30d_amount,--最近30日下单金额
+           sum(payment_count) payment_last_30d_count,--最近30日下单次数
+           sum(payment_amount) payment_last_30d_amount--最近30日下单金额
+                     
+       from dws_user_action_daycount 
+       where dt > date_add(dt , -30)
+       group by user_id
+   )new
+   on old.user_id = new.user_id
+```
+
+
+
+#### 4.3.2 商品行为
+
+##### 4.3.2.1 商品DWS层
+
+```sql
+-- 解析：
+    1. 表的字段如何创建
+        '准备'：  事实表：订单、订单详情、优惠券领用、支付、退款、收藏、加购物车、评价
+        '第一步'：找到和商品这个维度相关的所有事实表：订单详情、支付、退款、收藏、加购物车、评价
+        '第二步'：获取上述事实表的并取其度量值
+        '第三步'：将商品维度id + 第二步度量值的字段作为dws层的字段，创建商品行为的dws层表
+        
+    2. 如何向表中插入数据？
+        '第一步'：根据dws层表的字段，确定每个字段来自于哪个表
+        '第二步'：确定第一步中所有表的同步策略，确定表中存储的数据是什么及每行数据存储的是什么
+        '第三步'：一个一个字段来获取最后进行合并
+
+    3. 表保存什么数据
+       
+    4. 表中每行数据是什么
+
+    5. 存储格式
+       1. 分区表，每个分区保留当前最新的数据
+       2. 列式存储 + lzo压缩
+```
+
+- 建表语句
+
+```sql
+drop table if exists dws_sku_action_daycount;
+create external table dws_sku_action_daycount 
+(   
+    sku_id string comment 'sku_id',
+    order_count bigint comment '被下单次数',
+    order_num bigint comment '被下单件数',
+    order_amount decimal(16,2) comment '被下单金额',
+    payment_count bigint  comment '被支付次数',
+    payment_num bigint comment '被支付件数',
+    payment_amount decimal(16,2) comment '被支付金额',
+    refund_count bigint  comment '被退款次数',
+    refund_num bigint comment '被退款件数',
+    refund_amount  decimal(16,2) comment '被退款金额',
+    cart_count bigint comment '被加入购物车次数',
+    favor_count bigint comment '被收藏次数',
+    appraise_good_count bigint comment '好评数',
+    appraise_mid_count bigint comment '中评数',
+    appraise_bad_count bigint comment '差评数',
+    appraise_default_count bigint comment '默认评价数'
+) COMMENT '每日商品行为'
+PARTITIONED BY (`dt` string)
+stored as parquet
+location '/warehouse/gmall/dws/dws_sku_action_daycount/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 分析过程
+
+```sql
+
+==================================================
+   -- 1. 相关表：订单详情事实表
+      2. 同步策略：事务型事实表，以订单的创建时间为分区数据
+	  3. 保存的数据：一个分区保存当天所有的下单的信息
+	  3. 相关字段如下：
+   
+    order_count bigint comment '被下单次数',
+    order_num bigint comment '被下单件数',
+    order_amount decimal(16,2) comment '被下单金额',
+	
+	select 
+	   sku_id,
+	   count(*) order_count,--被下单次数
+	   sum(sku_num) order_num, --被下单件数
+	   sum(original_amount_d) order_amount --被下单金额	
+	from dwd_fact_order_detail
+	where dt= '2020-06-25'
+	group by sku_id
+	-------------------------------------------------
+   -- 1. 相关表：支付事实表
+      2. 同步策略：事务型事实表，以订单支付时间为分区
+	  3. 保存的数据：一个分区保存当天所有的支付信息
+	  4. 相关字段如下：
+	  5. 说明： 有一种情况，昨天晚上下单，但是今天才支付,那么下单的sku_id不在支付中，这样可能会导致数据丢失
+	payment_count bigint  comment '被支付次数',
+    payment_num bigint comment '被支付件数',
+    payment_amount decimal(16,2) comment '被支付金额',
+	
+	select 	    
+		sku_id,
+		count(*) payment_count,
+		sum(final_amount_d) payment_amount
+		
+	from dwd_fact_order_detail
+	where dt='2020-06-25'
+	and order_id in (
+		select
+				order_id
+		from dwd_fact_payment_info
+		where (dt='2020-06-25'
+        or dt=date_add('2020-06-25',-1))
+        and date_format(payment_time,'yyyy-MM-dd')='2020-06-25'
+	)
+	group by sku_id
+	
+	-------------------------------------------
+	-- 1. 相关表：退款事实表
+      2. 同步策略：事务型事实表，退款时间为分区
+	  3. 保存的数据：一个分区保存当天所有退款的数据
+	  4. 相关字段如下：
+		refund_count bigint  comment '被退款次数',
+		refund_num bigint comment '被退款件数',
+		refund_amount  decimal(16,2) comment '被退款金额',
+		
+		select 
+		      sku_id,
+			  sum(refund_count) refund_num,
+			  sum(refund_amount) refund_amount		  
+		from  dwd_fact_order_refund_info 
+		where dt = '2020-06-25'
+		group by sku_id
+		
+  -----------------------------------------------
+	-- 1. 相关表：加购车
+      2. 同步策略：周期型快照事实表
+	  3. 保存的数据：每天一个快照
+	  4. 相关字段如下：
+		    cart_count bigint comment '被加入购物车次数',
+
+        select  
+		    sku_id,
+			count(*) cart_count	
+		from dwd_fact_cart_info
+		where create_time = '2020-06-25'
+		group by sku_id
+
+    -------------------------------------------
+   -- 1. 相关表：收藏表
+      2. 同步策略：周期型快照事实表
+	  3. 保存的数据：每天一个快照
+	  4. 相关字段如下：
+		    favor_count bigint comment '被收藏次数',
+			
+			select
+			sku_id,
+			count(*) favor_count
+			from dwd_fact_favor_info
+			where create_time = '2020-06-25'
+			group by sku_id
+	
+	
+	-----------------------------------------------
+     -- 1. 相关表：评价事实表
+      2. 同步策略：事务型事实表，以订单支付时间为分区
+	  3. 保存的数据：每个分区保留当天的评价数据
+	  4. 相关字段如下：
+	appraise_good_count bigint comment '好评数',
+    appraise_mid_count bigint comment '中评数',
+    appraise_bad_count bigint comment '差评数',
+    appraise_default_count bigint comment '默认评价数'
+	
+	    select
+		sku_id,
+		sum(if(appraise='1201',1,0)) appraise_good_count,
+		sum(if(appraise='1202',1,0)) appraise_mid_count,
+		sum(if(appraise='1203',1,0)) appraise_bad_count,
+		sum(if(appraise='1204',1,0)) appraise_default_count,
+		from dwd_fact_comment_info 
+		where dt = '2020-06-25'
+		group by sku_id
+```
+
+- 插入数据
+
+```sql
+with 
+tmp_order as
+(
+    select
+        sku_id,
+        count(*) order_count,
+        sum(sku_num) order_num,
+        sum(final_amount_d) order_amount
+    from dwd_fact_order_detail
+    where dt='2020-06-25'
+    group by sku_id
+),
+tmp_payment as
+(
+    select
+        sku_id,
+        count(*) payment_count,
+        sum(sku_num) payment_num,
+        sum(final_amount_d) payment_amount
+    from dwd_fact_order_detail
+    where dt='2020-06-25'
+    and order_id in
+    (
+        select
+            id
+        from dwd_fact_order_info
+        where (dt='2020-06-25'
+        or dt=date_add('2020-06-25',-1))
+        and date_format(payment_time,'yyyy-MM-dd')='2020-06-25'
+    )
+    group by sku_id
+),
+tmp_refund as
+(
+    select
+        sku_id,
+        count(*) refund_count,
+        sum(refund_num) refund_num,
+        sum(refund_amount) refund_amount
+    from dwd_fact_order_refund_info
+    where dt='2020-06-25'
+    group by sku_id
+),
+tmp_cart as
+(
+    select
+        item sku_id,
+        count(*) cart_count
+    from dwd_action_log
+    where dt='2020-06-25'
+    and user_id is not null
+    and action_id='cart_add'
+    group by item 
+),tmp_favor as
+(
+    select
+        item sku_id,
+        count(*) favor_count
+    from dwd_action_log
+    where dt='2020-06-25'
+    and user_id is not null
+    and action_id='favor_add'
+    group by item 
+),
+tmp_appraise as
+(
+select
+    sku_id,
+    sum(if(appraise='1201',1,0)) appraise_good_count,
+    sum(if(appraise='1202',1,0)) appraise_mid_count,
+    sum(if(appraise='1203',1,0)) appraise_bad_count,
+    sum(if(appraise='1204',1,0)) appraise_default_count
+from dwd_fact_comment_info
+where dt='2020-06-25'
+group by sku_id
+)
+
+insert overwrite table dws_sku_action_daycount partition(dt='2020-06-25')
+select
+    sku_id,
+    sum(order_count),
+    sum(order_num),
+    sum(order_amount),
+    sum(payment_count),
+    sum(payment_num),
+    sum(payment_amount),
+    sum(refund_count),
+    sum(refund_num),
+    sum(refund_amount),
+    sum(cart_count),
+    sum(favor_count),
+    sum(appraise_good_count),
+    sum(appraise_mid_count),
+    sum(appraise_bad_count),
+    sum(appraise_default_count)
+from
+(
+    select
+        sku_id,
+        order_count,
+        order_num,
+        order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_order
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        payment_count,
+        payment_num,
+        payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_payment
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        refund_count,
+        refund_num,
+        refund_amount,
+        0 cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count        
+    from tmp_refund
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_cart
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_favor
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        0 favor_count,
+        appraise_good_count,
+        appraise_mid_count,
+        appraise_bad_count,
+        appraise_default_count
+    from tmp_appraise
+)tmp
+group by sku_id;
+```
+
+
+
+##### 4.3.2.2 商品DWT层
+
+- 建表语句
+
+```sql
+drop table if exists dwt_sku_topic;
+create external table dwt_sku_topic
+(
+    sku_id string comment 'sku_id',
+    spu_id string comment 'spu_id',
+    order_last_30d_count bigint comment '最近30日被下单次数',
+    order_last_30d_num bigint comment '最近30日被下单件数',
+    order_last_30d_amount decimal(16,2)  comment '最近30日被下单金额',
+    order_count bigint comment '累积被下单次数',
+    order_num bigint comment '累积被下单件数',
+    order_amount decimal(16,2) comment '累积被下单金额',
+    payment_last_30d_count   bigint  comment '最近30日被支付次数',
+    payment_last_30d_num bigint comment '最近30日被支付件数',
+    payment_last_30d_amount  decimal(16,2) comment '最近30日被支付金额',
+    payment_count   bigint  comment '累积被支付次数',
+    payment_num bigint comment '累积被支付件数',
+    payment_amount  decimal(16,2) comment '累积被支付金额',
+    refund_last_30d_count bigint comment '最近三十日退款次数',
+    refund_last_30d_num bigint comment '最近三十日退款件数',
+    refund_last_30d_amount decimal(16,2) comment '最近三十日退款金额',
+    refund_count bigint comment '累积退款次数',
+    refund_num bigint comment '累积退款件数',
+    refund_amount decimal(16,2) comment '累积退款金额',
+    cart_last_30d_count bigint comment '最近30日被加入购物车次数',
+    cart_count bigint comment '累积被加入购物车次数',
+    favor_last_30d_count bigint comment '最近30日被收藏次数',
+    favor_count bigint comment '累积被收藏次数',
+    appraise_last_30d_good_count bigint comment '最近30日好评数',
+    appraise_last_30d_mid_count bigint comment '最近30日中评数',
+    appraise_last_30d_bad_count bigint comment '最近30日差评数',
+    appraise_last_30d_default_count bigint comment '最近30日默认评价数',
+    appraise_good_count bigint comment '累积好评数',
+    appraise_mid_count bigint comment '累积中评数',
+    appraise_bad_count bigint comment '累积差评数',
+    appraise_default_count bigint comment '累积默认评价数'
+ )COMMENT '商品主题宽表'
+stored as parquet
+location '/warehouse/gmall/dwt/dwt_sku_topic/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 插入数据
+
+```sql
+insert overwrite table dwt_sku_topic
+select 
+    nvl(new.sku_id,old.sku_id),
+    sku_info.spu_id,
+    nvl(new.order_count30,0),
+    nvl(new.order_num30,0),
+    nvl(new.order_amount30,0),
+    nvl(old.order_count,0) + nvl(new.order_count,0),
+    nvl(old.order_num,0) + nvl(new.order_num,0),
+    nvl(old.order_amount,0) + nvl(new.order_amount,0),
+    nvl(new.payment_count30,0),
+    nvl(new.payment_num30,0),
+    nvl(new.payment_amount30,0),
+    nvl(old.payment_count,0) + nvl(new.payment_count,0),
+    nvl(old.payment_num,0) + nvl(new.payment_count,0),
+    nvl(old.payment_amount,0) + nvl(new.payment_count,0),
+    nvl(new.refund_count30,0),
+    nvl(new.refund_num30,0),
+    nvl(new.refund_amount30,0),
+    nvl(old.refund_count,0) + nvl(new.refund_count,0),
+    nvl(old.refund_num,0) + nvl(new.refund_num,0),
+    nvl(old.refund_amount,0) + nvl(new.refund_amount,0),
+    nvl(new.cart_count30,0),
+    nvl(old.cart_count,0) + nvl(new.cart_count,0),
+    nvl(new.favor_count30,0),
+    nvl(old.favor_count,0) + nvl(new.favor_count,0),
+    nvl(new.appraise_good_count30,0),
+    nvl(new.appraise_mid_count30,0),
+    nvl(new.appraise_bad_count30,0),
+    nvl(new.appraise_default_count30,0)  ,
+    nvl(old.appraise_good_count,0) + nvl(new.appraise_good_count,0),
+    nvl(old.appraise_mid_count,0) + nvl(new.appraise_mid_count,0),
+    nvl(old.appraise_bad_count,0) + nvl(new.appraise_bad_count,0),
+    nvl(old.appraise_default_count,0) + nvl(new.appraise_default_count,0) 
+from 
+dwt_sku_topic old
+full outer join 
+(
+    select 
+        sku_id,
+        sum(if(dt='2020-06-25', order_count,0 )) order_count,
+        sum(if(dt='2020-06-25',order_num ,0 ))  order_num, 
+        sum(if(dt='2020-06-25',order_amount,0 )) order_amount ,
+        sum(if(dt='2020-06-25',payment_count,0 )) payment_count,
+        sum(if(dt='2020-06-25',payment_num,0 )) payment_num,
+        sum(if(dt='2020-06-25',payment_amount,0 )) payment_amount,
+        sum(if(dt='2020-06-25',refund_count,0 )) refund_count,
+        sum(if(dt='2020-06-25',refund_num,0 )) refund_num,
+        sum(if(dt='2020-06-25',refund_amount,0 )) refund_amount,  
+        sum(if(dt='2020-06-25',cart_count,0 )) cart_count,
+        sum(if(dt='2020-06-25',favor_count,0 )) favor_count,
+        sum(if(dt='2020-06-25',appraise_good_count,0 )) appraise_good_count,  
+        sum(if(dt='2020-06-25',appraise_mid_count,0 ) ) appraise_mid_count ,
+        sum(if(dt='2020-06-25',appraise_bad_count,0 )) appraise_bad_count,  
+        sum(if(dt='2020-06-25',appraise_default_count,0 )) appraise_default_count,
+        sum(order_count) order_count30 ,
+        sum(order_num) order_num30,
+        sum(order_amount) order_amount30,
+        sum(payment_count) payment_count30,
+        sum(payment_num) payment_num30,
+        sum(payment_amount) payment_amount30,
+        sum(refund_count) refund_count30,
+        sum(refund_num) refund_num30,
+        sum(refund_amount) refund_amount30,
+        sum(cart_count) cart_count30,
+        sum(favor_count) favor_count30,
+        sum(appraise_good_count) appraise_good_count30,
+        sum(appraise_mid_count) appraise_mid_count30,
+        sum(appraise_bad_count) appraise_bad_count30,
+        sum(appraise_default_count) appraise_default_count30 
+    from dws_sku_action_daycount
+    where dt >= date_add ('2020-06-25', -30)
+    group by sku_id    
+)new 
+on new.sku_id = old.sku_id
+left join 
+(select * from dwd_dim_sku_info where dt='2020-06-25') sku_info
+on nvl(new.sku_id,old.sku_id)= sku_info.id;
+```
+
+#### 4.3.4 活动统计
+
+##### 4.3.4.1 活动DWS层
+
+- 建表
+
+```sql
+drop table if exists dwt_activity_topic;
+create external table dwt_activity_topic(
+    `id` string COMMENT '编号',
+    `activity_name` string  COMMENT '活动名称',
+    `activity_type` string  COMMENT '活动类型',
+    `start_time` string  COMMENT '开始时间',
+    `end_time` string  COMMENT '结束时间',
+    `create_time` string  COMMENT '创建时间',
+    `display_day_count` bigint COMMENT '当日曝光次数',
+    `order_day_count` bigint COMMENT '当日下单次数',
+    `order_day_amount` decimal(20,2) COMMENT '当日下单金额',
+    `payment_day_count` bigint COMMENT '当日支付次数',
+    `payment_day_amount` decimal(20,2) COMMENT '当日支付金额',
+    `display_count` bigint COMMENT '累积曝光次数',
+    `order_count` bigint COMMENT '累积下单次数',
+    `order_amount` decimal(20,2) COMMENT '累积下单金额',
+    `payment_count` bigint COMMENT '累积支付次数',
+    `payment_amount` decimal(20,2) COMMENT '累积支付金额'
+) COMMENT '活动主题宽表'
+row format delimited fields terminated by '\t'
+location '/warehouse/gmall/dwt/dwt_activity_topic/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+2. 插入数据
+
+```sql
+with
+tmp_op as
+(
+    select
+        activity_id,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='2020-06-25',1,0)) order_count,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='2020-06-25',final_total_amount,0)) order_amount,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='2020-06-25',1,0)) payment_count,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='2020-06-25',final_total_amount,0)) payment_amount
+    from dwd_fact_order_info
+    where (dt='2020-06-25' or dt=date_add('2020-06-25',-1))
+    and activity_id is not null
+    group by activity_id
+),
+tmp_display as
+(
+    select
+        item activity_id,
+        count(*) display_count
+    from dwd_display_log
+    where dt='2020-06-25'
+    and item_type='activity_id'
+    group by item
+),
+tmp_activity as
+(
+    select
+        *
+    from dwd_dim_activity_info
+    where dt='2020-06-25'
+)
+insert overwrite table dws_activity_info_daycount partition(dt='2020-06-25')
+select
+    nvl(tmp_op.activity_id,tmp_display.activity_id),
+    tmp_activity.activity_name,
+    tmp_activity.activity_type,
+    tmp_activity.start_time,
+    tmp_activity.end_time,
+    tmp_activity.create_time,
+    tmp_display.display_count,
+    tmp_op.order_count,
+    tmp_op.order_amount,
+    tmp_op.payment_count,
+    tmp_op.payment_amount
+from tmp_op
+full outer join tmp_display on tmp_op.activity_id=tmp_display.activity_id
+left join tmp_activity on nvl(tmp_op.activity_id,tmp_display.activity_id)=tmp_activity.id;
+```
+
+
+
+##### 4.3.4.2 活动DWT层
+
+- 建表
+
+```sql
+drop table if exists dwt_activity_topic;
+create external table dwt_activity_topic(
+    `id` string COMMENT '编号',
+    `activity_name` string  COMMENT '活动名称',
+    `activity_type` string  COMMENT '活动类型',
+    `start_time` string  COMMENT '开始时间',
+    `end_time` string  COMMENT '结束时间',
+    `create_time` string  COMMENT '创建时间',
+    `display_day_count` bigint COMMENT '当日曝光次数',
+    `order_day_count` bigint COMMENT '当日下单次数',
+    `order_day_amount` decimal(20,2) COMMENT '当日下单金额',
+    `payment_day_count` bigint COMMENT '当日支付次数',
+    `payment_day_amount` decimal(20,2) COMMENT '当日支付金额',
+    `display_count` bigint COMMENT '累积曝光次数',
+    `order_count` bigint COMMENT '累积下单次数',
+    `order_amount` decimal(20,2) COMMENT '累积下单金额',
+    `payment_count` bigint COMMENT '累积支付次数',
+    `payment_amount` decimal(20,2) COMMENT '累积支付金额'
+) COMMENT '活动主题宽表'
+row format delimited fields terminated by '\t'
+location '/warehouse/gmall/dwt/dwt_activity_topic/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 插入数据
+
+```sql
+insert overwrite table dwt_activity_topic
+select
+    nvl(new.id,old.id),
+    nvl(new.activity_name,old.activity_name),
+    nvl(new.activity_type,old.activity_type),
+    nvl(new.start_time,old.start_time),
+    nvl(new.end_time,old.end_time),
+    nvl(new.create_time,old.create_time),
+    nvl(new.display_count,0),
+    nvl(new.order_count,0),
+    nvl(new.order_amount,0.0),
+    nvl(new.payment_count,0),
+    nvl(new.payment_amount,0.0),
+    nvl(new.display_count,0)+nvl(old.display_count,0),
+    nvl(new.order_count,0)+nvl(old.order_count,0),
+    nvl(new.order_amount,0.0)+nvl(old.order_amount,0.0),
+    nvl(new.payment_count,0)+nvl(old.payment_count,0),
+    nvl(new.payment_amount,0.0)+nvl(old.payment_amount,0.0)
+from
+(
+    select
+        *
+    from dwt_activity_topic
+)old
+full outer join
+(
+    select
+        *
+    from dws_activity_info_daycount
+    where dt='2020-06-25'
+)new
+on old.id=new.id;
+```
+
+#### 4.3.5 地区统计
+
+##### 4.3.5.1 地区DWS层
+
+- 建表语句
+
+```sql
+drop table if exists dws_area_stats_daycount;
+create external table dws_area_stats_daycount(
+    `id` bigint COMMENT '编号',
+    `province_name` string COMMENT '省份名称',
+    `area_code` string COMMENT '地区编码',
+    `iso_code` string COMMENT 'iso编码',
+    `region_id` string COMMENT '地区ID',
+    `region_name` string COMMENT '地区名称',
+    `login_count` string COMMENT '活跃设备数',
+    `order_count` bigint COMMENT '下单次数',
+    `order_amount` decimal(20,2) COMMENT '下单金额',
+    `payment_count` bigint COMMENT '支付次数',
+    `payment_amount` decimal(20,2) COMMENT '支付金额'
+) COMMENT '每日地区信息表'
+PARTITIONED BY (`dt` string)
+stored as parquet
+location '/warehouse/gmall/dws/dws_area_stats_daycount/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 插入数据
+
+```sql
+with 
+tmp_login as
+(
+    select
+        area_code,
+        count(*) login_count
+    from dwd_start_log
+    where dt='2020-06-25'
+    group by area_code
+),
+tmp_op as
+(
+    select
+        province_id,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='2020-06-25',1,0)) order_count,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='2020-06-25',final_total_amount,0)) order_amount,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='2020-06-25',1,0)) payment_count,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='2020-06-25',final_total_amount,0)) payment_amount
+    from dwd_fact_order_info
+    where (dt='2020-06-25' or dt=date_add('2020-06-25',-1))
+    group by province_id
+)
+insert overwrite table dws_area_stats_daycount partition(dt='2020-06-25')
+select
+    pro.id,
+    pro.province_name,
+    pro.area_code,
+    pro.iso_code,
+    pro.region_id,
+    pro.region_name,
+    nvl(tmp_login.login_count,0),
+    nvl(tmp_op.order_count,0),
+    nvl(tmp_op.order_amount,0.0),
+    nvl(tmp_op.payment_count,0),
+    nvl(tmp_op.payment_amount,0.0)
+from dwd_dim_base_province pro
+left join tmp_login on pro.area_code=tmp_login.area_code
+left join tmp_op on pro.id=tmp_op.province_id;
+```
+
+
+
+##### 4.3.5.2 地区DWT层
+
+- 建表语句
+
+```sql
+drop table if exists dwt_area_topic;
+create external table dwt_area_topic(
+    `id` bigint COMMENT '编号',
+    `province_name` string COMMENT '省份名称',
+    `area_code` string COMMENT '地区编码',
+    `iso_code` string COMMENT 'iso编码',
+    `region_id` string COMMENT '地区ID',
+    `region_name` string COMMENT '地区名称',
+    `login_day_count` string COMMENT '当天活跃设备数',
+    `login_last_30d_count` string COMMENT '最近30天活跃设备数',
+    `order_day_count` bigint COMMENT '当天下单次数',
+    `order_day_amount` decimal(16,2) COMMENT '当天下单金额',
+    `order_last_30d_count` bigint COMMENT '最近30天下单次数',
+    `order_last_30d_amount` decimal(16,2) COMMENT '最近30天下单金额',
+    `payment_day_count` bigint COMMENT '当天支付次数',
+    `payment_day_amount` decimal(16,2) COMMENT '当天支付金额',
+    `payment_last_30d_count` bigint COMMENT '最近30天支付次数',
+    `payment_last_30d_amount` decimal(16,2) COMMENT '最近30天支付金额'
+) COMMENT '地区主题宽表'
+row format delimited fields terminated by '\t'
+location '/warehouse/gmall/dwt/dwt_area_topic/'
+tblproperties ("parquet.compression"="lzo");
+```
+
+- 插入数据
+
+```sql
+insert overwrite table dwt_area_topic
+select
+    nvl(old.id,new.id),
+    nvl(old.province_name,new.province_name),
+    nvl(old.area_code,new.area_code),
+    nvl(old.iso_code,new.iso_code),
+    nvl(old.region_id,new.region_id),
+    nvl(old.region_name,new.region_name),
+    nvl(new.login_day_count,0),
+    nvl(new.login_last_30d_count,0),
+    nvl(new.order_day_count,0),
+    nvl(new.order_day_amount,0.0),
+    nvl(new.order_last_30d_count,0),
+    nvl(new.order_last_30d_amount,0.0),
+    nvl(new.payment_day_count,0),
+    nvl(new.payment_day_amount,0.0),
+    nvl(new.payment_last_30d_count,0),
+    nvl(new.payment_last_30d_amount,0.0)
+from 
+(
+    select
+        *
+    from dwt_area_topic
+)old
+full outer join
+(
+    select
+        id,
+        province_name,
+        area_code,
+        iso_code,
+        region_id,
+        region_name,
+        sum(if(dt='2020-06-25',login_count,0)) login_day_count,
+        sum(if(dt='2020-06-25',order_count,0)) order_day_count,
+        sum(if(dt='2020-06-25',order_amount,0.0)) order_day_amount,
+        sum(if(dt='2020-06-25',payment_count,0)) payment_day_count,
+        sum(if(dt='2020-06-25',payment_amount,0.0)) payment_day_amount,
+        sum(login_count) login_last_30d_count,
+        sum(order_count) order_last_30d_count,
+        sum(order_amount) order_last_30d_amount,
+        sum(payment_count) payment_last_30d_count,
+        sum(payment_amount) payment_last_30d_amount
+    from dws_area_stats_daycount
+    where dt>=date_add('2020-06-25',-30)
+    group by id,province_name,area_code,iso_code,region_id,region_name
+)new
+on old.id=new.id;
+```
+
+
+
+### 4.4 脚本
+
+#### 4.4.1 DWS脚本
+
+1. 在/home/atguigu/bin目录下创建脚本dwd_to_dws.sh
+
+```
+[atguigu@hadoop102 bin]$ vim dwd_to_dws.sh
+```
+
+2. 脚本内容
+
+```bash
+#!/bin/bash
+
+APP=gmall
+hive=/opt/module/hive/bin/hive
+
+# 如果是输入的日期按照取输入日期；如果没输入日期取当前时间的前一天
+if [ -n "$1" ] ;then
+    do_date=$1
+else
+    do_date=`date -d "-1 day" +%F`
+fi
+
+sql="
+set mapreduce.job.queuename=hive;
+with
+tmp_start as
+(
+    select  
+        mid_id,
+        brand,
+        model,
+        count(*) login_count
+    from ${APP}.dwd_start_log
+    where dt='$do_date'
+    group by mid_id,brand,model
+),
+tmp_page as
+(
+    select
+        mid_id,
+        brand,
+        model,        
+        collect_set(named_struct('page_id',page_id,'page_count',page_count)) page_stats
+    from
+    (
+        select
+            mid_id,
+            brand,
+            model,
+            page_id,
+            count(*) page_count
+        from ${APP}.dwd_page_log
+        where dt='$do_date'
+        group by mid_id,brand,model,page_id
+    )tmp
+    group by mid_id,brand,model
+)
+insert overwrite table ${APP}.dws_uv_detail_daycount partition(dt='$do_date')
+select
+    nvl(tmp_start.mid_id,tmp_page.mid_id),
+    nvl(tmp_start.brand,tmp_page.brand),
+    nvl(tmp_start.model,tmp_page.model),
+    tmp_start.login_count,
+    tmp_page.page_stats
+from tmp_start 
+full outer join tmp_page
+on tmp_start.mid_id=tmp_page.mid_id
+and tmp_start.brand=tmp_page.brand
+and tmp_start.model=tmp_page.model;
+
+
+with
+tmp_login as
+(
+    select
+        user_id,
+        count(*) login_count
+    from ${APP}.dwd_start_log
+    where dt='$do_date'
+    and user_id is not null
+    group by user_id
+),
+tmp_cart as
+(
+    select
+        user_id,
+        count(*) cart_count
+    from ${APP}.dwd_action_log
+    where dt='$do_date'
+    and user_id is not null
+    and action_id='cart_add'
+    group by user_id
+),tmp_order as
+(
+    select
+        user_id,
+        count(*) order_count,
+        sum(final_total_amount) order_amount
+    from ${APP}.dwd_fact_order_info
+    where dt='$do_date'
+    group by user_id
+) ,
+tmp_payment as
+(
+    select
+        user_id,
+        count(*) payment_count,
+        sum(payment_amount) payment_amount
+    from ${APP}.dwd_fact_payment_info
+    where dt='$do_date'
+    group by user_id
+),
+tmp_order_detail as
+(
+    select
+        user_id,
+        collect_set(named_struct('sku_id',sku_id,'sku_num',sku_num,'order_count',order_count,'order_amount',order_amount)) order_stats
+    from
+    (
+        select
+            user_id,
+            sku_id,
+            sum(sku_num) sku_num,
+            count(*) order_count,
+            cast(sum(final_amount_d) as decimal(20,2)) order_amount
+        from ${APP}.dwd_fact_order_detail
+        where dt='$do_date'
+        group by user_id,sku_id
+    )tmp
+    group by user_id
+)
+
+insert overwrite table ${APP}.dws_user_action_daycount partition(dt='$do_date')
+select
+    tmp_login.user_id,
+    login_count,
+    nvl(cart_count,0),
+    nvl(order_count,0),
+    nvl(order_amount,0.0),
+    nvl(payment_count,0),
+    nvl(payment_amount,0.0),
+    order_stats
+from tmp_login
+left outer join tmp_cart on tmp_login.user_id=tmp_cart.user_id
+left outer join tmp_order on tmp_login.user_id=tmp_order.user_id
+left outer join tmp_payment on tmp_login.user_id=tmp_payment.user_id
+left outer join tmp_order_detail on tmp_login.user_id=tmp_order_detail.user_id;
+
+with 
+tmp_order as
+(
+    select
+        sku_id,
+        count(*) order_count,
+        sum(sku_num) order_num,
+        sum(final_amount_d) order_amount
+    from ${APP}.dwd_fact_order_detail
+    where dt='$do_date'
+    group by sku_id
+),
+tmp_payment as
+(
+    select
+        sku_id,
+        count(*) payment_count,
+        sum(sku_num) payment_num,
+        sum(final_amount_d) payment_amount
+    from ${APP}.dwd_fact_order_detail
+    where dt='$do_date'
+    and order_id in
+    (
+        select
+            id
+        from ${APP}.dwd_fact_order_info
+        where (dt='$do_date'
+        or dt=date_add('$do_date',-1))
+        and date_format(payment_time,'yyyy-MM-dd')='$do_date'
+    )
+    group by sku_id
+),
+tmp_refund as
+(
+    select
+        sku_id,
+        count(*) refund_count,
+        sum(refund_num) refund_num,
+        sum(refund_amount) refund_amount
+    from ${APP}.dwd_fact_order_refund_info
+    where dt='$do_date'
+    group by sku_id
+),
+tmp_cart as
+(
+    select
+        item sku_id,
+        count(*) cart_count
+    from ${APP}.dwd_action_log
+    where dt='$do_date'
+    and user_id is not null
+    and action_id='cart_add'
+    group by item 
+),tmp_favor as
+(
+    select
+        item sku_id,
+        count(*) favor_count
+    from ${APP}.dwd_action_log
+    where dt='$do_date'
+    and user_id is not null
+    and action_id='favor_add'
+    group by item 
+),
+tmp_appraise as
+(
+select
+    sku_id,
+    sum(if(appraise='1201',1,0)) appraise_good_count,
+    sum(if(appraise='1202',1,0)) appraise_mid_count,
+    sum(if(appraise='1203',1,0)) appraise_bad_count,
+    sum(if(appraise='1204',1,0)) appraise_default_count
+from ${APP}.dwd_fact_comment_info
+where dt='$do_date'
+group by sku_id
+)
+
+insert overwrite table ${APP}.dws_sku_action_daycount partition(dt='$do_date')
+select
+    sku_id,
+    sum(order_count),
+    sum(order_num),
+    sum(order_amount),
+    sum(payment_count),
+    sum(payment_num),
+    sum(payment_amount),
+    sum(refund_count),
+    sum(refund_num),
+    sum(refund_amount),
+    sum(cart_count),
+    sum(favor_count),
+    sum(appraise_good_count),
+    sum(appraise_mid_count),
+    sum(appraise_bad_count),
+    sum(appraise_default_count)
+from
+(
+    select
+        sku_id,
+        order_count,
+        order_num,
+        order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_order
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        payment_count,
+        payment_num,
+        payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_payment
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        refund_count,
+        refund_num,
+        refund_amount,
+        0 cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count        
+    from tmp_refund
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        cart_count,
+        0 favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_cart
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        favor_count,
+        0 appraise_good_count,
+        0 appraise_mid_count,
+        0 appraise_bad_count,
+        0 appraise_default_count
+    from tmp_favor
+    union all
+    select
+        sku_id,
+        0 order_count,
+        0 order_num,
+        0 order_amount,
+        0 payment_count,
+        0 payment_num,
+        0 payment_amount,
+        0 refund_count,
+        0 refund_num,
+        0 refund_amount,
+        0 cart_count,
+        0 favor_count,
+        appraise_good_count,
+        appraise_mid_count,
+        appraise_bad_count,
+        appraise_default_count
+    from tmp_appraise
+)tmp
+group by sku_id;
+
+with 
+tmp_login as
+(
+    select
+        area_code,
+        count(*) login_count
+    from ${APP}.dwd_start_log
+    where dt='$do_date'
+    group by area_code
+),
+tmp_op as
+(
+    select
+        province_id,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='$do_date',1,0)) order_count,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='$do_date',final_total_amount,0)) order_amount,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='$do_date',1,0)) payment_count,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='$do_date',final_total_amount,0)) payment_amount
+    from ${APP}.dwd_fact_order_info
+    where (dt='$do_date' or dt=date_add('$do_date',-1))
+    group by province_id
+)
+insert overwrite table ${APP}.dws_area_stats_daycount partition(dt='$do_date')
+select
+    pro.id,
+    pro.province_name,
+    pro.area_code,
+    pro.iso_code,
+    pro.region_id,
+    pro.region_name,
+    nvl(tmp_login.login_count,0),
+    nvl(tmp_op.order_count,0),
+    nvl(tmp_op.order_amount,0.0),
+    nvl(tmp_op.payment_count,0),
+    nvl(tmp_op.payment_amount,0.0)
+from ${APP}.dwd_dim_base_province pro
+left join tmp_login on pro.area_code=tmp_login.area_code
+left join tmp_op on pro.id=tmp_op.province_id;
+
+
+with
+tmp_op as
+(
+    select
+        activity_id,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='$do_date',1,0)) order_count,
+        sum(if(date_format(create_time,'yyyy-MM-dd')='$do_date',final_total_amount,0)) order_amount,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='$do_date',1,0)) payment_count,
+        sum(if(date_format(payment_time,'yyyy-MM-dd')='$do_date',final_total_amount,0)) payment_amount
+    from ${APP}.dwd_fact_order_info
+    where (dt='$do_date' or dt=date_add('$do_date',-1))
+    and activity_id is not null
+    group by activity_id
+),
+tmp_display as
+(
+    select
+        item activity_id,
+        count(*) display_count
+    from ${APP}.dwd_display_log
+    where dt='$do_date'
+    and item_type='activity_id'
+    group by item
+),
+tmp_activity as
+(
+    select
+        *
+    from ${APP}.dwd_dim_activity_info
+    where dt='$do_date'
+)
+insert overwrite table ${APP}.dws_activity_info_daycount partition(dt='$do_date')
+select
+    nvl(tmp_op.activity_id,tmp_display.activity_id),
+    tmp_activity.activity_name,
+    tmp_activity.activity_type,
+    tmp_activity.start_time,
+    tmp_activity.end_time,
+    tmp_activity.create_time,
+    tmp_display.display_count,
+    tmp_op.order_count,
+    tmp_op.order_amount,
+    tmp_op.payment_count,
+    tmp_op.payment_amount
+from tmp_op
+full outer join tmp_display on tmp_op.activity_id=tmp_display.activity_id
+left join tmp_activity on nvl(tmp_op.activity_id,tmp_display.activity_id)=tmp_activity.id;
+"
+
+$hive -e "$sql"
+```
+
+#### 4.4.2 DWT脚本
+
+1. 在/home/atguigu/bin目录下创建脚本dws_to_dwt.sh
+
+```
+[atguigu@hadoop102 bin]$ vim dws_to_dwt.sh
+```
+
+2. 脚本内容
+
+```bash
+#!/bin/bash
+
+APP=gmall
+hive=/opt/module/hive/bin/hive
+
+# 如果是输入的日期按照取输入日期；如果没输入日期取当前时间的前一天
+if [ -n "$1" ] ;then
+    do_date=$1
+else 
+    do_date=`date -d "-1 day" +%F`
+fi
+
+sql="
+set mapreduce.job.queuename=hive;
+insert overwrite table ${APP}.dwt_uv_topic
+select
+    nvl(new.mid_id,old.mid_id),
+    nvl(new.model,old.model),
+    nvl(new.brand,old.brand),
+    if(old.mid_id is null,'$do_date',old.login_date_first),
+    if(new.mid_id is not null,'$do_date',old.login_date_last),
+    if(new.mid_id is not null, new.login_count,0),
+    nvl(old.login_count,0)+if(new.login_count>0,1,0)
+from
+(
+    select
+        *
+    from ${APP}.dwt_uv_topic
+)old
+full outer join
+(
+    select
+        *
+    from ${APP}.dws_uv_detail_daycount
+    where dt='$do_date'
+)new
+on old.mid_id=new.mid_id;
+
+insert overwrite table ${APP}.dwt_user_topic
+select
+    nvl(new.user_id,old.user_id),
+    if(old.login_date_first is null and new.login_count>0,'$do_date',old.login_date_first),
+    if(new.login_count>0,'$do_date',old.login_date_last),
+    nvl(old.login_count,0)+if(new.login_count>0,1,0),
+    nvl(new.login_last_30d_count,0),
+    if(old.order_date_first is null and new.order_count>0,'$do_date',old.order_date_first),
+    if(new.order_count>0,'$do_date',old.order_date_last),
+    nvl(old.order_count,0)+nvl(new.order_count,0),
+    nvl(old.order_amount,0)+nvl(new.order_amount,0),
+    nvl(new.order_last_30d_count,0),
+    nvl(new.order_last_30d_amount,0),
+    if(old.payment_date_first is null and new.payment_count>0,'$do_date',old.payment_date_first),
+    if(new.payment_count>0,'$do_date',old.payment_date_last),
+    nvl(old.payment_count,0)+nvl(new.payment_count,0),
+    nvl(old.payment_amount,0)+nvl(new.payment_amount,0),
+    nvl(new.payment_last_30d_count,0),
+    nvl(new.payment_last_30d_amount,0)
+from
+${APP}.dwt_user_topic old
+full outer join
+(
+    select
+        user_id,
+        sum(if(dt='$do_date',login_count,0)) login_count,
+        sum(if(dt='$do_date',order_count,0)) order_count,
+        sum(if(dt='$do_date',order_amount,0)) order_amount,
+        sum(if(dt='$do_date',payment_count,0)) payment_count,
+        sum(if(dt='$do_date',payment_amount,0)) payment_amount,
+        sum(if(login_count>0,1,0)) login_last_30d_count,
+        sum(order_count) order_last_30d_count,
+        sum(order_amount) order_last_30d_amount,
+        sum(payment_count) payment_last_30d_count,
+        sum(payment_amount) payment_last_30d_amount
+    from ${APP}.dws_user_action_daycount
+    where dt>=date_add( '$do_date',-30)
+    group by user_id
+)new
+on old.user_id=new.user_id;
+
+insert overwrite table ${APP}.dwt_sku_topic
+select 
+    nvl(new.sku_id,old.sku_id),
+    sku_info.spu_id,
+    nvl(new.order_count30,0),
+    nvl(new.order_num30,0),
+    nvl(new.order_amount30,0),
+    nvl(old.order_count,0) + nvl(new.order_count,0),
+    nvl(old.order_num,0) + nvl(new.order_num,0),
+    nvl(old.order_amount,0) + nvl(new.order_amount,0),
+    nvl(new.payment_count30,0),
+    nvl(new.payment_num30,0),
+    nvl(new.payment_amount30,0),
+    nvl(old.payment_count,0) + nvl(new.payment_count,0),
+    nvl(old.payment_num,0) + nvl(new.payment_count,0),
+    nvl(old.payment_amount,0) + nvl(new.payment_count,0),
+    nvl(new.refund_count30,0),
+    nvl(new.refund_num30,0),
+    nvl(new.refund_amount30,0),
+    nvl(old.refund_count,0) + nvl(new.refund_count,0),
+    nvl(old.refund_num,0) + nvl(new.refund_num,0),
+    nvl(old.refund_amount,0) + nvl(new.refund_amount,0),
+    nvl(new.cart_count30,0),
+    nvl(old.cart_count,0) + nvl(new.cart_count,0),
+    nvl(new.favor_count30,0),
+    nvl(old.favor_count,0) + nvl(new.favor_count,0),
+    nvl(new.appraise_good_count30,0),
+    nvl(new.appraise_mid_count30,0),
+    nvl(new.appraise_bad_count30,0),
+    nvl(new.appraise_default_count30,0)  ,
+    nvl(old.appraise_good_count,0) + nvl(new.appraise_good_count,0),
+    nvl(old.appraise_mid_count,0) + nvl(new.appraise_mid_count,0),
+    nvl(old.appraise_bad_count,0) + nvl(new.appraise_bad_count,0),
+    nvl(old.appraise_default_count,0) + nvl(new.appraise_default_count,0) 
+from 
+(
+    select
+        sku_id,
+        spu_id,
+        order_last_30d_count,
+        order_last_30d_num,
+        order_last_30d_amount,
+        order_count,
+        order_num,
+        order_amount  ,
+        payment_last_30d_count,
+        payment_last_30d_num,
+        payment_last_30d_amount,
+        payment_count,
+        payment_num,
+        payment_amount,
+        refund_last_30d_count,
+        refund_last_30d_num,
+        refund_last_30d_amount,
+        refund_count,
+        refund_num,
+        refund_amount,
+        cart_last_30d_count,
+        cart_count,
+        favor_last_30d_count,
+        favor_count,
+        appraise_last_30d_good_count,
+        appraise_last_30d_mid_count,
+        appraise_last_30d_bad_count,
+        appraise_last_30d_default_count,
+        appraise_good_count,
+        appraise_mid_count,
+        appraise_bad_count,
+        appraise_default_count 
+    from ${APP}.dwt_sku_topic
+)old
+full outer join 
+(
+    select 
+        sku_id,
+        sum(if(dt='$do_date', order_count,0 )) order_count,
+        sum(if(dt='$do_date',order_num ,0 ))  order_num, 
+        sum(if(dt='$do_date',order_amount,0 )) order_amount ,
+        sum(if(dt='$do_date',payment_count,0 )) payment_count,
+        sum(if(dt='$do_date',payment_num,0 )) payment_num,
+        sum(if(dt='$do_date',payment_amount,0 )) payment_amount,
+        sum(if(dt='$do_date',refund_count,0 )) refund_count,
+        sum(if(dt='$do_date',refund_num,0 )) refund_num,
+        sum(if(dt='$do_date',refund_amount,0 )) refund_amount,  
+        sum(if(dt='$do_date',cart_count,0 )) cart_count,
+        sum(if(dt='$do_date',favor_count,0 )) favor_count,
+        sum(if(dt='$do_date',appraise_good_count,0 )) appraise_good_count,  
+        sum(if(dt='$do_date',appraise_mid_count,0 ) ) appraise_mid_count ,
+        sum(if(dt='$do_date',appraise_bad_count,0 )) appraise_bad_count,  
+        sum(if(dt='$do_date',appraise_default_count,0 )) appraise_default_count,
+        sum(order_count) order_count30 ,
+        sum(order_num) order_num30,
+        sum(order_amount) order_amount30,
+        sum(payment_count) payment_count30,
+        sum(payment_num) payment_num30,
+        sum(payment_amount) payment_amount30,
+        sum(refund_count) refund_count30,
+        sum(refund_num) refund_num30,
+        sum(refund_amount) refund_amount30,
+        sum(cart_count) cart_count30,
+        sum(favor_count) favor_count30,
+        sum(appraise_good_count) appraise_good_count30,
+        sum(appraise_mid_count) appraise_mid_count30,
+        sum(appraise_bad_count) appraise_bad_count30,
+        sum(appraise_default_count) appraise_default_count30 
+    from ${APP}.dws_sku_action_daycount
+    where dt >= date_add ('$do_date', -30)
+    group by sku_id    
+)new 
+on new.sku_id = old.sku_id
+left join 
+(select * from ${APP}.dwd_dim_sku_info where dt='$do_date') sku_info
+on nvl(new.sku_id,old.sku_id)= sku_info.id;
+
+insert overwrite table ${APP}.dwt_activity_topic
+select
+    nvl(new.id,old.id),
+    nvl(new.activity_name,old.activity_name),
+    nvl(new.activity_type,old.activity_type),
+    nvl(new.start_time,old.start_time),
+    nvl(new.end_time,old.end_time),
+    nvl(new.create_time,old.create_time),
+    nvl(new.display_count,0),
+    nvl(new.order_count,0),
+    nvl(new.order_amount,0.0),
+    nvl(new.payment_count,0),
+    nvl(new.payment_amount,0.0),
+    nvl(new.display_count,0)+nvl(old.display_count,0),
+    nvl(new.order_count,0)+nvl(old.order_count,0),
+    nvl(new.order_amount,0.0)+nvl(old.order_amount,0.0),
+    nvl(new.payment_count,0)+nvl(old.payment_count,0),
+    nvl(new.payment_amount,0.0)+nvl(old.payment_amount,0.0)
+from
+(
+    select
+        *
+    from ${APP}.dwt_activity_topic
+)old
+full outer join
+(
+    select
+        *
+    from ${APP}.dws_activity_info_daycount
+    where dt='$do_date'
+)new
+on old.id=new.id;
+
+insert overwrite table ${APP}.dwt_area_topic
+select
+    nvl(old.id,new.id),
+    nvl(old.province_name,new.province_name),
+    nvl(old.area_code,new.area_code),
+    nvl(old.iso_code,new.iso_code),
+    nvl(old.region_id,new.region_id),
+    nvl(old.region_name,new.region_name),
+    nvl(new.login_day_count,0),
+    nvl(new.login_last_30d_count,0),
+    nvl(new.order_day_count,0),
+    nvl(new.order_day_amount,0.0),
+    nvl(new.order_last_30d_count,0),
+    nvl(new.order_last_30d_amount,0.0),
+    nvl(new.payment_day_count,0),
+    nvl(new.payment_day_amount,0.0),
+    nvl(new.payment_last_30d_count,0),
+    nvl(new.payment_last_30d_amount,0.0)
+from 
+(
+    select
+        *
+    from ${APP}.dwt_area_topic
+)old
+full outer join
+(
+    select
+        id,
+        province_name,
+        area_code,
+        iso_code,
+        region_id,
+        region_name,
+        sum(if(dt='$do_date',login_count,0)) login_day_count,
+        sum(if(dt='$do_date',order_count,0)) order_day_count,
+        sum(if(dt='$do_date',order_amount,0.0)) order_day_amount,
+        sum(if(dt='$do_date',payment_count,0)) payment_day_count,
+        sum(if(dt='$do_date',payment_amount,0.0)) payment_day_amount,
+        sum(login_count) login_last_30d_count,
+        sum(order_count) order_last_30d_count,
+        sum(order_amount) order_last_30d_amount,
+        sum(payment_count) payment_last_30d_count,
+        sum(payment_amount) payment_last_30d_amount
+    from ${APP}.dws_area_stats_daycount
+    where dt>=date_add('$do_date',-30)
+    group by id,province_name,area_code,iso_code,region_id,region_name
+)new
+on old.id=new.id;
+"
+
+$hive -e "$sql"
+```
+
+## 5.Ads
+
+```mermaid
+graph LR
+A(原始表)-->B(目标表)
+C(dwt_visitor_topic)-->D(ads_visit_stats)
+E(dwd_page_log)-->D
+F(目标字段)--分析字段-->G(原始字段)
+
+
+```
+
+```mermaid
+graph TB
+A(ads_visit_stats)--insert-->B
+subgraph sub
+	B(is_new,channel)--group by-->C(session_id,mid_id,is_new,channel)
+	C--group by-->D{拼出2个表的字段}
+	D--left join-->E(dwd_page_log)
+	D--left join-->F(dwt_visitor_topic)
+	
+	
+end
+```
+
+#### 1.访客统计
+
+| 目标字段         | 原始字段                                                     |
+| ---------------- | ------------------------------------------------------------ |
+| is_new           | dwt_visitor_topic concat(mid_id,'-',last_value(if(last_page_id is null,ts,null),true) over(partition by mid_id order by ts)) |
+| channel          | dwd_page_log                                                 |
+| uv_count         | distanct(mid_id)                                             |
+| duration_sec     | dwd_page_log                                                 |
+| avg_duration_sec |                                                              |
+| page_count       | group by(session id)  dwd_page_log.last_page_id->session id  |
+| avg_page_count   |                                                              |
+| sv_count         | count(*) 会话数                                              |
+| bounce_count     | page_count                                                   |
+| bounce_rate      | page_count=1,1,0))/count(*)                                  |
+|                  | 通过2次group by把具体的数据抽象化，也就是从一个整体去用数据描述 |
+
+* 建表
+
+```
+DROP TABLE IF EXISTS ads_visit_stats;
+CREATE EXTERNAL TABLE ads_visit_stats (
+  `dt` STRING COMMENT '统计日期',
+  `is_new` STRING COMMENT '新老标识,1:新,0:老',
+  `channel` STRING COMMENT '渠道',
+  `uv_count` BIGINT COMMENT '日活(访问人数)',
+  `duration_sec` BIGINT COMMENT '页面停留总时长',
+  `avg_duration_sec` BIGINT COMMENT '一次会话，页面停留平均时长,单位为描述',
+  `page_count` BIGINT COMMENT '页面总浏览数',
+  `avg_page_count` BIGINT COMMENT '一次会话，页面平均浏览数',
+  `sv_count` BIGINT COMMENT '会话次数',
+  `bounce_count` BIGINT COMMENT '跳出数',
+  `bounce_rate` DECIMAL(16,2) COMMENT '跳出率'
+) COMMENT '访客统计'
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
+LOCATION '/warehouse/gmall_test/ads/ads_visit_stats/';
 
 ```
 
 * 插入数据
 
 ```sql
-set hive.exec.dynamic.partition.mode=nonstrict；
-insert overwrite table dws_visitor_action_daycount partition(dt='2021-06-14')
+insert overwrite table ads_visit_stats
+select * from ads_visit_stats
+union
 select
-    t1.mid_id,
-    t1.brand,
-    t1.model,
-    t1.is_new,
-    t1.channel,
-    t1.os,
-    t1.area_code,
-    t1.version_code,
-    t1.visit_count,
-    t3.page_stats
+    '2021-06-14' dt,
+    is_new,
+    channel,
+    count(distinct(mid_id)) uv_count,
+    cast(sum(duration)/1000 as bigint) duration_sec,
+    cast(avg(duration)/1000 as bigint) avg_duration_sec,
+    sum(page_count) page_count,
+    cast(avg(page_count) as bigint) avg_page_count,
+    count(*) sv_count,
+    sum(if(page_count=1,1,0)) bounce_count,
+    cast(sum(if(page_count=1,1,0))/count(*)*100 as decimal(16,2)) bounce_rate
 from
+(
+    select
+        session_id,
+        mid_id,
+        is_new,
+        channel,
+        count(*) page_count,
+        sum(during_time) duration
+    from
     (
         select
-            mid_id,
-            brand,
-            model,
-            if(array_contains(collect_set(is_new),'0'),'0','1') is_new,--ods_page_log中，同一天内，同一设备的is_new字段，可能全部为1，可能全部为0，也可能部分为0，部分为1(卸载重装),故做该处理
-            collect_set(channel) channel,
-            collect_set(os) os,
-            collect_set(area_code) area_code,
-            collect_set(version_code) version_code,
-            sum(if(last_page_id is null,1,0)) visit_count
-        from dwd_page_log
-        where dt='2021-06-14'
-          and last_page_id is null
-        group by mid_id,model,brand
-    )t1
-        join
-    (
-        select
-            mid_id,
-            brand,
-            model,
-            collect_set(named_struct('page_id',page_id,'page_count',page_count,'during_time',during_time)) page_stats
+            t1.mid_id,
+            channel,
+            is_new,
+            last_page_id,
+            page_id,
+            during_time,
+            concat(t1.mid_id,'-',last_value(if(last_page_id is null,ts,null),true) over (partition by t1.mid_id order by ts)) session_id
         from
-            (
-                select
-                    mid_id,
-                    brand,
-                    model,
-                    page_id,
-                    count(*) page_count,
-                    sum(during_time) during_time
-                from dwd_page_log
-                where dt='2021-06-14'
-                group by mid_id,model,brand,page_id
-            )t2
-        group by mid_id,model,brand
+        (
+            select
+                mid_id,
+                channel,
+                last_page_id,
+                page_id,
+                during_time,
+                dt,
+                ts
+            from dwd_page_log
+            where dt='2021-06-14'
+        )t1
+        left join
+        (
+            select
+                mid_id,
+                if(visit_date_first='2021-06-14','1','0') is_new
+            from dwt_visitor_topic
+            where dt='2021-06-14'
+        )t2
+        on t1.mid_id=t2.mid_id
     )t3
-    on t1.mid_id=t3.mid_id
-        and t1.brand=t3.brand
-        and t1.model=t3.model;
+    group by session_id,mid_id,is_new,channel
+)t6
+group by is_new,channel;
 
 ```
 
 
 
+#### 1.路径分析
 
+* 建表
 
+```sql
+DROP TABLE IF EXISTS ads_page_path;
+CREATE EXTERNAL TABLE ads_page_path
+(
+    `dt` STRING COMMENT '统计日期',
+    `source` STRING COMMENT '跳转起始页面ID',
+    `target` STRING COMMENT '跳转终到页面ID',
+    `path_count` BIGINT COMMENT '跳转次数'
+)  COMMENT '页面浏览路径'
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
+LOCATION '/warehouse/gmall_test/ads/ads_page_path/';
+```
 
+* 要求统计用户的页面访问路径
 
+```sql
+select
+  '2021-06-14' dt,
+  source,
+  target,
+  count(*) number
 
-
-
-
-
+from
+    (
+        select
+            concat('step-',step,':',source) source,
+            concat('step-',step+1,':',target) target
+        from (
+                 select
+                     mid_id,
+                     page_id source,
+                     lead(page_id) over(partition by mid_id order by ts) target,
+                     row_number() over (partition by mid_id order by ts) step
+                 from
+                     dwd_page_log
+                 where
+                         dt='2021-06-14'
+             ) t1
+        )t2
+group by source, target;
+```
 

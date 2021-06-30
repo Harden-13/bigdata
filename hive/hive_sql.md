@@ -441,6 +441,13 @@ SELECT *
 FROM t1, t2
 ```
 
+* 注意事项
+* org.apache.hadoop.hive.ql.parse.ParseException
+
+```
+子查询中要给子查询的结果赋值一个表明，hive独有的书写习惯
+```
+
 
 
 ### 显示信息
