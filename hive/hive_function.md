@@ -251,6 +251,16 @@ https://juejin.cn/post/6916707407997435912
 
 #### 15.repeat
 
+* 使用
+
+```
+select repeat('Hive',2);
+OK
+HiveHive
+```
+
+
+
 #### 16.posexplode
 
 #### 17.datediff
@@ -260,6 +270,60 @@ https://juejin.cn/post/6916707407997435912
 ```
 语法: datediff(string enddate,string startdate)
 返回值: int
+```
+
+#### 18.data_sub
+
+* 语法
+
+```
+date_sub (string startdate, int days)
+返回值: string
+说明:返回开始日期startdate减少days天后的日期。
+```
+
+#### 19.unix_timestamp
+
+* 英文解释
+* * <mark>seconds</mark>
+
+```
+Convert time string with given pattern to Unix time stamp (in seconds) The result of this function is in seconds.
+```
+
+```
+unix_timestamp() 得到当前时间戳
+若无参数调用，则返回一个 Unix timestamp (‘1970-01-01 00:00:00’ GMT 之后的秒数) 作为无符号整数，得到当前时间戳
+
+如果参数date满足yyyy-MM-dd HH:mm:ss形式，则可以直接unix_timestamp(string date) 得到参数对应的时间戳
+
+如果参数date满足yyyy-MM-dd HH:mm:ss形式，则我们需要指定date的形式，在进行转换
+unix_timestamp(‘2009-03-20’, ‘yyyy-MM-dd’)=1237532400
+```
+
+
+
+#### 20.from_unixtime
+
+* 语法
+
+```
+from_unixtime(t1,’yyyy-MM-dd HH:mm:ss’)
+其中t1是10位的时间戳值，即1970-1-1至今的秒，而13位的所谓毫秒的是不可以的。
+需要截取，然后转换成bigint类型，因为from_unixtime类第一个参数只接受bigint类型
+```
+
+* 使用
+
+```
+select from_unixtime(cast(substring(tistmp,1,10) as bigint),’yyyy-MM-dd HH’) 
+tim ,count(*) cn from
+```
+
+* 结合unix_timestamp
+
+```
+两个函数可以结合使用，通过from_unixtime(unix_timestamp(date_created),'yyyy-MM-dd HH:mm:ss')来规范时间的格式。
 ```
 
 
@@ -293,9 +357,9 @@ CONCAT_WS must be "string or array<string>
 COLLECT_SET(col)：函数只接受基本数据类型，它的主要作用是将某字段的值进行去重汇总，产生array类型字段
 ```
 
-##### 3.1 collect_list //Todo
+##### 4. collect_list //Todo
 
-##### 4.实例
+##### 5.实例
 
 * 测试数据
 
@@ -337,7 +401,7 @@ LATERAL VIEW
 
 ```
 
-##### 2.实例
+###### 1.实例
 
 * 数据
 
@@ -358,6 +422,75 @@ from
 lateral view
  explode(split(category,',')) movie_info_tmp as catagory_name;
 ```
+
+##### 2.posexplode
+
+* 英文解释
+* 实现多列转多行
+
+```
+i am using posexplode to split single to multiple records in hive. Along with multiple records as output i need to generate sequence number for each row.
+
+```
+
+###### 1.实例
+
+* 建表
+
+```
+create table if not exists test.a(
+     id STRING,
+     tim STRING
+)
+row format delimited fields terminated by '-' 
+lines terminated by '\n';
+load data local inpath 'opt/data/shijian.txt' into table test.a;
+# 查询
+hive> select * from test.a;                                           
+OK
+a.id	a.tim
+a,b,c,d	2:00,3:00,4:00,5:00
+f,b,c,d	1:10,2:20,3:30,4:40
+```
+
+* 因为该函数可以将index和数据都取出来，使用两次posexplode并令两次取到的index相等就行了。
+
+```sql
+select id,tim,single_id,single_tim from test.a 
+lateral view posexplode(split(id,',')) t as single_id_index, single_id
+lateral view posexplode(split(tim,',')) t as single_yim_index, single_tim
+where single_id_index = single_yim_index;
+# result
+id		tim				single_id	single_tim
+a,b,c,d	2:00,3:00,4:00,5:00		a	2:00
+a,b,c,d	2:00,3:00,4:00,5:00		b	3:00
+a,b,c,d	2:00,3:00,4:00,5:00		c	4:00
+a,b,c,d	2:00,3:00,4:00,5:00		d	5:00
+f,b,c,d	1:10,2:20,3:30,4:40		f	1:10
+f,b,c,d	1:10,2:20,3:30,4:40		b	2:20
+f,b,c,d	1:10,2:20,3:30,4:40		c	3:30
+f,b,c,d	1:10,2:20,3:30,4:40		d	4:40
+```
+
+* 单次
+
+```
+select id,tim,single_id_index,single_id from test.a 
+lateral view posexplode(split(id,',')) t as single_id_index, single_id;d;
+# result
+id	tim	single_id_index	single_id
+a,b,c,d	2:00,3:00,4:00,5:00	0	a
+a,b,c,d	2:00,3:00,4:00,5:00	1	b
+a,b,c,d	2:00,3:00,4:00,5:00	2	c
+a,b,c,d	2:00,3:00,4:00,5:00	3	d
+f,b,c,d	1:10,2:20,3:30,4:40	0	f
+f,b,c,d	1:10,2:20,3:30,4:40	1	b
+f,b,c,d	1:10,2:20,3:30,4:40	2	c
+f,b,c,d	1:10,2:20,3:30,4:40	3	d
+
+```
+
+
 
 ### 5. over开窗
 
@@ -425,7 +558,7 @@ neil,2017-06-12,80
 mart,2017-04-13,94
 ```
 
-##### 2.实例
+###### 1.实例(over)
 
 * 查询在2017年4月份购买过的顾客及总人数
 
@@ -543,6 +676,10 @@ over(partition by .... order by ....) :会按照指定的字段进行分区， �
 over(partition by ... order by ... rows between ... and ....) : 指定每条数据的窗口大小.
 
 ```
+
+##### 2.lead
+
+##### 3.last_value
 
 ###  6. 关键字分类
 

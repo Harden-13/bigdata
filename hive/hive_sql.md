@@ -273,6 +273,9 @@ _ 代表一个字符。
 
 ```
 GROUP BY语句通常会和聚合函数一起使用，按照一个或者多个列队结果进行分组，然后对每个组执行聚合操作
+1.Hive不允许直接访问非group by字段；
+2.对于非group by字段，可以用Hive的collect_set函数收集这些字段，返回一个数组；
+3.使用数字下标，可以直接访问数组中的元素；
 ```
 
 * having
@@ -448,9 +451,41 @@ FROM t1, t2
 子查询中要给子查询的结果赋值一个表明，hive独有的书写习惯
 ```
 
+### 二.hive & mr
+
+#### 1. join & mr
+
+* Hive会对每对JOIN连接对象启动一个MR任务
+
+```sql
+# 多表查询
+hive (default)>SELECT e.ename, d.dname, l.loc_name
+FROM   emp e 
+JOIN   dept d
+ON     d.deptno = e.deptno 
+JOIN   location l
+ON     d.loc = l.loc;
+# 本例中会首先启动一个MapReduce job对表e和表d进行连接操作，然后会再启动一个MapReduce job将第一个MapReduce job的输出和表l;进行连接操作（Hive总是按照从左到右的顺序执行的。）
+```
+
+* 优化
+
+```
+当对3个或者更多表进行join连接时，如果每个on子句都使用相同的连接键的话，那么只会产生一个MapReduce job。
+```
+
+#### 2.sort by & order by & reducer
+
+* 使用场景区别
+
+| 函数     | 区别                                                         | reducer                                       |
+| -------- | ------------------------------------------------------------ | --------------------------------------------- |
+| order by | 全局排序，只有一个Reducer，大规模数据，效率非常低            |                                               |
+| sort by  | 每个reducer(可能是分区)产生一个排序文件。每个Reducer内部进行排序，对全局结果集来说不是排序。 | set mapreduce.job.reduces=3;设置reducer的数量 |
 
 
-### 显示信息
+
+### 三.显示信息
 
 ##### 1.显示数据库
 

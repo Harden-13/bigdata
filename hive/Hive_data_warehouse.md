@@ -4559,6 +4559,8 @@ from
             last_page_id,
             page_id,
             during_time,
+// session拼接(mid_id-ts)
+// 为了区别同一个mid 的不同session，通过开窗函数取到最后一个为null的值，null用来判定是一个session的终点        
             concat(t1.mid_id,'-',last_value(if(last_page_id is null,ts,null),true) over (partition by t1.mid_id order by ts)) session_id
         from
         (
